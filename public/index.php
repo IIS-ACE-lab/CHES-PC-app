@@ -137,8 +137,6 @@ function append_audit_log_file(string $path, array $data): void {
   if (flock($fh, LOCK_EX)) {
     fwrite($fh, json_encode([
       "ts" => gmdate("c"),
-      "ip" => $_SERVER["REMOTE_ADDR"] ?? "",
-      "ua" => $_SERVER["HTTP_USER_AGENT"] ?? "",
       "data" => $data,
     ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . "\n");
     fflush($fh);
