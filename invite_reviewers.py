@@ -11,6 +11,10 @@ from email.message import EmailMessage
 from pathlib import Path
 from typing import Optional
 
+import os
+
+os.umask(0o002)
+
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS reviewers (
@@ -186,6 +190,7 @@ def build_invitation_email(
     given_names: str,
     family_name: str,
     template: str,
+    cc: Optional[str] = None,
 ) -> EmailMessage:
     full_name = " ".join(x for x in [given_names.strip(), family_name.strip()] if x)
     link = f"{website_url}?t={token}"
@@ -198,6 +203,8 @@ def build_invitation_email(
     msg["Subject"] = subject
     if reply_to:
         msg["Reply-To"] = reply_to
+    if cc:
+        msg["Cc"] = cc
     msg.set_content(body)
     return msg
 
@@ -228,6 +235,11 @@ def main() -> int:
     )
     ap.add_argument("--from-email", required=True, help="From: address for invitation email")
     ap.add_argument("--reply-to", default="", help="Optional Reply-To address")
+    ap.add_argument(
+        "--cc",
+        default="",
+        help="Default CC email address (optional)",
+    )
     ap.add_argument(
         "--subject",
         default="Reviewer invitation",
@@ -313,6 +325,7 @@ def main() -> int:
                 given_names=str(row["given_names"] or ""),
                 family_name=str(row["family_name"] or ""),
                 template=template_text,
+                cc=args.cc or None,
             )
 
             if args.dry_run:
