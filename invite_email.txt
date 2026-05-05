@@ -1,0 +1,13 @@
+Dear {name},
+
+You are invited to serve as a reviewer.
+
+Please use the following personal link to accept the invitation and confirm your details:
+
+{link}
+
+If the link does not work when clicked, please copy and paste it into your browser.
+
+Best regards,
+  PC Chair
+
