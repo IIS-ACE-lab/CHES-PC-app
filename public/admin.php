@@ -113,6 +113,7 @@ $statusCounts = [
   "accepted" => 0,
   "registered" => 0,
   "declined" => 0,
+  "invalid_email" => 0,
   "unknown" => 0,
 ];
 
@@ -206,6 +207,7 @@ asort($gaps);
       <tr><td>Accepted</td><td><?= (int)$statusCounts["accepted"] ?></td><td><?= h(pct((int)$statusCounts["accepted"], $total)) ?></td></tr>
       <tr><td>Registered (saved details)</td><td><?= (int)$statusCounts["registered"] ?></td><td><?= h(pct((int)$statusCounts["registered"], $total)) ?></td></tr>
       <tr><td>Declined</td><td><?= (int)$statusCounts["declined"] ?></td><td><?= h(pct((int)$statusCounts["declined"], $total)) ?></td></tr>
+      <tr><td>Invalid email</td><td><?= (int)$statusCounts["invalid_email"] ?></td><td><?= h(pct((int)$statusCounts["declined"], $total)) ?></td></tr>
       <tr><td>Unknown/other</td><td><?= (int)$statusCounts["unknown"] ?></td><td><?= h(pct((int)$statusCounts["unknown"], $total)) ?></td></tr>
       <tr><th>Total</th><th><?= (int)$total ?></th><th><?= h(pct($total, $total)) ?></th></tr>
     </table>
