@@ -126,6 +126,8 @@ foreach ($EXPERTISE_TAXONOMY as $cat => $topics) {
 
 $countryCounts = [];
 
+$affiliationCounts = [];
+
 $total = 0;
 $withExpertise = 0;
 
@@ -182,11 +184,34 @@ foreach ($rows as $r) {
       }
     }
   }
+
+  $affiliationRaw = trim((string)($r["affiliation"] ?? ""));
+  
+  if ($affiliationRaw !== "") {
+    $seenAffiliations = [];
+  
+    foreach (explode("|", $affiliationRaw) as $a) {
+      $a = trim($a);
+      if ($a === "") continue;
+  
+      // Deduplicate per reviewer, case-insensitive
+      $key = mb_strtolower($a, "UTF-8");
+      if (isset($seenAffiliations[$key])) continue;
+  
+      $seenAffiliations[$key] = $a;
+    }
+  
+    if (count($seenAffiliations) > 0) {
+      foreach ($seenAffiliations as $a) {
+        $affiliationCounts[$a] = ($affiliationCounts[$a] ?? 0) + 1;
+      }
+    }
+  }
 }
 
 arsort($expertiseCounts);
-
 arsort($countryCounts);
+arsort($affiliationCounts);
 
 $gaps = [];
 foreach ($expertiseCounts as $tag => $cnt) {
@@ -301,6 +326,26 @@ asort($gaps);
       <?php foreach ($countryCounts as $country => $cnt): ?>
         <tr>
           <td><?= h($country) ?></td>
+          <td><?= (int)$cnt ?></td>
+          <td><?= h(pct((int)$cnt, $total)) ?></td>
+        </tr>
+      <?php endforeach; ?>
+    <?php endif; ?>
+  </table>
+</div>
+
+<div class="card">
+  <h2>Affiliation overview</h2>
+
+  <table style="margin-top:10px;">
+    <tr><th>Affiliation</th><th>Count</th><th>Share</th></tr>
+
+    <?php if (count($affiliationCounts) === 0): ?>
+      <tr><td colspan="3" class="muted">No affiliations recorded yet.</td></tr>
+    <?php else: ?>
+      <?php foreach ($affiliationCounts as $affiliation => $cnt): ?>
+        <tr>
+          <td><?= h($affiliation) ?></td>
           <td><?= (int)$cnt ?></td>
           <td><?= h(pct((int)$cnt, $total)) ?></td>
         </tr>
