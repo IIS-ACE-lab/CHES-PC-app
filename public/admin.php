@@ -417,12 +417,69 @@ foreach ($rows as $r) {
     $geoTree[$continent]["subs"][$subcontinent]["total"]++;
     $geoTree[$continent]["subs"][$subcontinent]["countries"][$country]["total"]++;
 
-    // affiliations under country
-    foreach ($affiliations as $aff) {
 
-      $geoTree[$continent]["subs"][$subcontinent]["countries"][$country]["affiliations"][$aff]
-        = ($geoTree[$continent]["subs"][$subcontinent]["countries"][$country]["affiliations"][$aff] ?? 0) + 1;
+    $countryParts = array_map('trim', explode("|", (string)($r["country"] ?? "")));
+    $affParts     = array_map('trim', explode("|", (string)($r["affiliation"] ?? "")));
+    
+    $n = max(count($countryParts), count($affParts));
+    
+    $seenCountryAffPairs = [];
+    
+    for ($i = 0; $i < $n; $i++) {
+      $country = canonical_country_name($countryParts[$i] ?? "");
+      $aff     = trim($affParts[$i] ?? "");
+    
+      if ($country === "") continue;
+    
+      // Deduplicate exact country-affiliation pair per reviewer
+      $pairKey = mb_strtolower($country . "||" . $aff, "UTF-8");
+      if (isset($seenCountryAffPairs[$pairKey])) continue;
+      $seenCountryAffPairs[$pairKey] = true;
+    
+      $t = $territories[$country] ?? null;
+    
+      $continent    = $t["continent"] ?? "Unknown";
+      $subcontinent = $t["subcontinent"] ?? "Unknown";
+    
+      if (!isset($geoTree[$continent])) {
+        $geoTree[$continent] = [
+          "total" => 0,
+          "subs" => [],
+        ];
+      }
+    
+      if (!isset($geoTree[$continent]["subs"][$subcontinent])) {
+        $geoTree[$continent]["subs"][$subcontinent] = [
+          "total" => 0,
+          "countries" => [],
+        ];
+      }
+    
+      if (!isset($geoTree[$continent]["subs"][$subcontinent]["countries"][$country])) {
+        $geoTree[$continent]["subs"][$subcontinent]["countries"][$country] = [
+          "total" => 0,
+          "affiliations" => [],
+        ];
+      }
+    
+      // Count this country once for this reviewer/country pair
+      $geoTree[$continent]["total"]++;
+      $geoTree[$continent]["subs"][$subcontinent]["total"]++;
+      $geoTree[$continent]["subs"][$subcontinent]["countries"][$country]["total"]++;
+    
+      // Add only the affiliation in the corresponding position
+      if ($aff !== "") {
+        $geoTree[$continent]["subs"][$subcontinent]["countries"][$country]["affiliations"][$aff] =
+          ($geoTree[$continent]["subs"][$subcontinent]["countries"][$country]["affiliations"][$aff] ?? 0) + 1;
+      }
     }
+
+//    // affiliations under country
+//    foreach ($affiliations as $aff) {
+//
+//      $geoTree[$continent]["subs"][$subcontinent]["countries"][$country]["affiliations"][$aff]
+//        = ($geoTree[$continent]["subs"][$subcontinent]["countries"][$country]["affiliations"][$aff] ?? 0) + 1;
+//    }
   }
 }
 
@@ -535,11 +592,13 @@ asort($gaps);
     <table>
       <tr><th>Status</th><th>Count</th><th>Share</th></tr>
       <tr><td>Open (invited)</td><td><?= (int)$statusCounts["invited"] ?></td><td><?= h(pct((int)$statusCounts["invited"], $total)) ?></td></tr>
+<!--
       <tr><td>Opened (optional)</td><td><?= (int)$statusCounts["opened"] ?></td><td><?= h(pct((int)$statusCounts["opened"], $total)) ?></td></tr>
+-->
       <tr><td>Accepted</td><td><?= (int)$statusCounts["accepted"] ?></td><td><?= h(pct((int)$statusCounts["accepted"], $total)) ?></td></tr>
       <tr><td>Registered (saved details)</td><td><?= (int)$statusCounts["registered"] ?></td><td><?= h(pct((int)$statusCounts["registered"], $total)) ?></td></tr>
       <tr><td>Declined</td><td><?= (int)$statusCounts["declined"] ?></td><td><?= h(pct((int)$statusCounts["declined"], $total)) ?></td></tr>
-      <tr><td>Invalid email</td><td><?= (int)$statusCounts["invalid_email"] ?></td><td><?= h(pct((int)$statusCounts["declined"], $total)) ?></td></tr>
+      <tr><td>Invalid email</td><td><?= (int)$statusCounts["invalid_email"] ?></td><td><?= h(pct((int)$statusCounts["invalid_email"], $total)) ?></td></tr>
       <tr><td>Unknown/other</td><td><?= (int)$statusCounts["unknown"] ?></td><td><?= h(pct((int)$statusCounts["unknown"], $total)) ?></td></tr>
       <tr><th>Total</th><th><?= (int)$total ?></th><th><?= h(pct($total, $total)) ?></th></tr>
     </table>
