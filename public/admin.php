@@ -446,6 +446,8 @@ unset($cont, $sub, $country);
 $totalCountryEntries = array_sum($countryCounts);
 $totalAffiliationEntries = array_sum($affiliationCounts);
 
+$totalExpertiseSelections = array_sum($expertiseCounts);
+
 
 $gaps = [];
 foreach ($expertiseCounts as $tag => $cnt) {
@@ -570,7 +572,7 @@ asort($gaps);
         <tr>
           <td><?= h($tag) ?></td>
           <td><?= (int)$cnt ?></td>
-          <td><?= h(pct((int)$cnt, $total)) ?></td>
+          <td><?= h(pct((int)$cnt, $totalExpertiseSelections)) ?></td>
         </tr>
       <?php endforeach; ?>
     <?php endif; ?>
