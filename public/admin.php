@@ -157,6 +157,7 @@ function canonical_country_name(string $country): string {
   static $aliases = [
     'the netherlands' => 'Netherlands',
     'deutschland' => 'Germany',
+    'u.s.' => 'United States',
   ];
 
   $k = mb_strtolower($c, 'UTF-8');
