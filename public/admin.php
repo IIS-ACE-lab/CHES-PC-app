@@ -710,33 +710,46 @@ asort($gaps);
 <?php endif; ?>
 
 <script nonce="<?= h($csp_nonce) ?>">
-document.addEventListener("click", (e) => {
-  const row = e.target.closest(".geo-toggle");
-  if (!row) return;
-
-  const prefix = row.dataset.togglePrefix;
-  if (!prefix) return;
-
-  const children = document.querySelectorAll(`[data-group="${CSS.escape(prefix)}"]`);
-  const expanding = [...children].some(el => el.classList.contains("geo-hidden"));
-
-  children.forEach(el => {
-    el.classList.toggle("geo-hidden", !expanding);
-
-    // If collapsing a continent, also collapse all country rows below its subcontinents
-    if (!expanding && el.classList.contains("geo-subcontinent-row")) {
-      const subPrefix = el.dataset.togglePrefix;
-      document.querySelectorAll(`[data-group="${CSS.escape(subPrefix)}"]`)
-        .forEach(c => c.classList.add("geo-hidden"));
-
+  document.addEventListener("click", (e) => {
+    const row = e.target.closest(".geo-toggle");
+    if (!row) return;
+  
+    const prefix = row.dataset.togglePrefix;
+    if (!prefix) return;
+  
+    const children = document.querySelectorAll(`[data-group="${CSS.escape(prefix)}"]`);
+    const expanding = [...children].some(el => el.classList.contains("geo-hidden"));
+  
+    function setArrow(el, open) {
       const arrow = el.querySelector(".geo-arrow");
-      if (arrow) arrow.textContent = "▸";
+      if (arrow) arrow.textContent = open ? "▾" : "▸";
+    }
+  
+    function collapseDescendants(parentPrefix) {
+      const kids = document.querySelectorAll(`[data-group="${CSS.escape(parentPrefix)}"]`);
+  
+      kids.forEach(kid => {
+        kid.classList.add("geo-hidden");
+  
+        if (kid.classList.contains("geo-toggle")) {
+          setArrow(kid, false);
+  
+          const childPrefix = kid.dataset.togglePrefix;
+          if (childPrefix) collapseDescendants(childPrefix);
+        }
+      });
+    }
+  
+    if (expanding) {
+      // Show immediate children only
+      children.forEach(el => el.classList.remove("geo-hidden"));
+      setArrow(row, true);
+    } else {
+      // Hide all descendants recursively
+      collapseDescendants(prefix);
+      setArrow(row, false);
     }
   });
-
-  const arrow = row.querySelector(".geo-arrow");
-  if (arrow) arrow.textContent = expanding ? "▾" : "▸";
-});
 </script>
 
 </body>
