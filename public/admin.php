@@ -335,43 +335,113 @@ foreach ($continentTree as &$c) {
 }
 unset($c);
 
-$geoTree = []; // continent => [total, subs => subcontinent => [total, countries => country => count]]
 
 $geoTree = [];
 
-foreach ($countryCounts as $country => $countryCnt) {
-  $t = $territories[$country] ?? null;
+foreach ($rows as $r) {
 
-  $continent = $t["continent"] ?? "Unknown";
-  $sub       = $t["subcontinent"] ?? "Unknown";
+  // -------------------------
+  // Countries
+  // -------------------------
 
-  if (!isset($geoTree[$continent])) {
-    $geoTree[$continent] = [
-      "total" => $continentCounts[$continent] ?? 0,
-      "subs" => [],
-    ];
+  $countries = [];
+  $countryRaw = trim((string)($r["country"] ?? ""));
+
+  foreach (explode("|", $countryRaw) as $c) {
+
+    $c = canonical_country_name(trim($c));
+
+    if ($c === "") continue;
+
+    $k = mb_strtolower($c, "UTF-8");
+
+    $countries[$k] = $c; // deduplicate
   }
 
-  if (!isset($geoTree[$continent]["subs"][$sub])) {
-    $geoTree[$continent]["subs"][$sub] = [
-      "total" => $subcontinentCounts[$sub] ?? 0,
-      "countries" => [],
-    ];
+  // -------------------------
+  // Affiliations
+  // -------------------------
+
+  $affiliations = [];
+  $affRaw = trim((string)($r["affiliation"] ?? ""));
+
+  foreach (explode("|", $affRaw) as $a) {
+
+    $a = trim($a);
+
+    if ($a === "") continue;
+
+    $k = mb_strtolower($a, "UTF-8");
+
+    $affiliations[$k] = $a; // deduplicate
   }
 
-  $geoTree[$continent]["subs"][$sub]["countries"][$country] = $countryCnt;
+  // -------------------------
+  // Insert into geo tree
+  // -------------------------
+
+  foreach ($countries as $country) {
+
+    $t = $territories[$country] ?? null;
+
+    $continent   = $t["continent"] ?? "Unknown";
+    $subcontinent = $t["subcontinent"] ?? "Unknown";
+
+    // continent
+    if (!isset($geoTree[$continent])) {
+      $geoTree[$continent] = [
+        "total" => 0,
+        "subs" => [],
+      ];
+    }
+
+    // subcontinent
+    if (!isset($geoTree[$continent]["subs"][$subcontinent])) {
+      $geoTree[$continent]["subs"][$subcontinent] = [
+        "total" => 0,
+        "countries" => [],
+      ];
+    }
+
+    // country
+    if (!isset($geoTree[$continent]["subs"][$subcontinent]["countries"][$country])) {
+      $geoTree[$continent]["subs"][$subcontinent]["countries"][$country] = [
+        "total" => 0,
+        "affiliations" => [],
+      ];
+    }
+
+    // increment totals
+    $geoTree[$continent]["total"]++;
+    $geoTree[$continent]["subs"][$subcontinent]["total"]++;
+    $geoTree[$continent]["subs"][$subcontinent]["countries"][$country]["total"]++;
+
+    // affiliations under country
+    foreach ($affiliations as $aff) {
+
+      $geoTree[$continent]["subs"][$subcontinent]["countries"][$country]["affiliations"][$aff]
+        = ($geoTree[$continent]["subs"][$subcontinent]["countries"][$country]["affiliations"][$aff] ?? 0) + 1;
+    }
+  }
 }
 
-uasort($geoTree, fn($a, $b) => $b["total"] <=> $a["total"]);
+uasort($geoTree, fn($a,$b) => $b["total"] <=> $a["total"]);
 
-foreach ($geoTree as &$continentData) {
-  uasort($continentData["subs"], fn($a, $b) => $b["total"] <=> $a["total"]);
+foreach ($geoTree as &$cont) {
 
-  foreach ($continentData["subs"] as &$subData) {
-    arsort($subData["countries"]);
+  uasort($cont["subs"], fn($a,$b) => $b["total"] <=> $a["total"]);
+
+  foreach ($cont["subs"] as &$sub) {
+
+    uasort($sub["countries"], fn($a,$b) => $b["total"] <=> $a["total"]);
+
+    foreach ($sub["countries"] as &$country) {
+      arsort($country["affiliations"]);
+    }
   }
 }
-unset($continentData, $subData);
+
+unset($cont, $sub, $country);
 
 
 $gaps = [];
@@ -438,6 +508,12 @@ asort($gaps);
 .geo-arrow {
   display: inline-block;
   width: 1.2em;
+}
+
+.geo-affiliation-row {
+  padding-left: 72px;
+  color: #666;
+  font-size: 0.95em;
 }
 
   </style>
@@ -571,15 +647,32 @@ asort($gaps);
           <td><?= h(pct((int)$subData["total"], $total)) ?></td>
         </tr>
     
-        <?php foreach ($subData["countries"] as $country => $countryCnt): ?>
-          <tr class="geo-country-row geo-hidden"
-              data-group="<?= h($subId) ?>">
-            <td><?= h($country) ?></td>
-            <td><?= (int)$countryCnt ?></td>
-            <td><?= h(pct((int)$countryCnt, $total)) ?></td>
+        <?php foreach ($subData["countries"] as $country => $countryData): ?>
+          <?php
+            $countryId = $subId . '-country-' . (++$countryIdx);
+            $countryCnt = (int)($countryData["total"] ?? 0);
+          ?>
+ 
+          <tr class="geo-country-row geo-toggle geo-hidden"
+              data-group="<?= h($subId) ?>"
+              data-toggle-prefix="<?= h($countryId) ?>">
+            <td><span class="geo-arrow">▸</span><?= h($country) ?></td>
+            <td><?= $countryCnt ?></td>
+            <td><?= h(pct($countryCnt, $total)) ?></td>
           </tr>
+        
+          <?php foreach (($countryData["affiliations"] ?? []) as $aff => $affCnt): ?>
+            <tr class="geo-affiliation-row geo-hidden"
+                data-group="<?= h($countryId) ?>">
+              <td class="geo-affiliation-row">
+                ↳ <?= h($aff) ?>
+              </td>
+              <td><?= (int)$affCnt ?></td>
+              <td><?= h(pct((int)$affCnt, $total)) ?></td>
+            </tr>
+          <?php endforeach; ?>
+
         <?php endforeach; ?>
-    
       <?php endforeach; ?>
     <?php endforeach; ?>
   </table>
