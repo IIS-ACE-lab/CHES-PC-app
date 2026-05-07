@@ -124,6 +124,8 @@ foreach ($EXPERTISE_TAXONOMY as $cat => $topics) {
   }
 }
 
+$countryCounts = [];
+
 $total = 0;
 $withExpertise = 0;
 
@@ -157,9 +159,34 @@ foreach ($rows as $r) {
       }
     }
   }
+
+  $countryRaw = trim((string)($r["country"] ?? ""));
+  
+  if ($countryRaw !== "") {
+    $seenCountries = [];
+  
+    foreach (explode("|", $countryRaw) as $c) {
+      $c = trim($c);
+      if ($c === "") continue;
+  
+      // Deduplicate per reviewer, case-insensitive
+      $key = mb_strtolower($c, "UTF-8");
+      if (isset($seenCountries[$key])) continue;
+  
+      $seenCountries[$key] = $c;
+    }
+  
+    if (count($seenCountries) > 0) {
+      foreach ($seenCountries as $c) {
+        $countryCounts[$c] = ($countryCounts[$c] ?? 0) + 1;
+      }
+    }
+  }
 }
 
 arsort($expertiseCounts);
+
+arsort($countryCounts);
 
 $gaps = [];
 foreach ($expertiseCounts as $tag => $cnt) {
@@ -257,6 +284,26 @@ asort($gaps);
     <?php else: ?>
       <?php foreach ($gaps as $tag => $cnt): ?>
         <tr><td><?= h($tag) ?></td><td><?= (int)$cnt ?></td></tr>
+      <?php endforeach; ?>
+    <?php endif; ?>
+  </table>
+</div>
+
+<div class="card">
+  <h2>Country overview</h2>
+
+  <table style="margin-top:10px;">
+    <tr><th>Country</th><th>Count</th><th>Share</th></tr>
+
+    <?php if (count($countryCounts) === 0): ?>
+      <tr><td colspan="3" class="muted">No countries recorded yet.</td></tr>
+    <?php else: ?>
+      <?php foreach ($countryCounts as $country => $cnt): ?>
+        <tr>
+          <td><?= h($country) ?></td>
+          <td><?= (int)$cnt ?></td>
+          <td><?= h(pct((int)$cnt, $total)) ?></td>
+        </tr>
       <?php endforeach; ?>
     <?php endif; ?>
   </table>
