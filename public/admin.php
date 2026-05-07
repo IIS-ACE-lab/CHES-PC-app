@@ -131,13 +131,6 @@ foreach ($EXPERTISE_TAXONOMY as $cat => $topics) {
   }
 }
 
-$countryCounts = [];
-
-$subcontinentCounts = [];
-$continentCounts = [];
-
-$unknownCountries = [];
-
 $affiliationCounts = [];
 
 $total = 0;
@@ -194,66 +187,6 @@ foreach ($rows as $r) {
     }
   }
 
-  $countryRaw = trim((string)($r["country"] ?? ""));
-  
-  if ($countryRaw !== "") {
-  
-    $seenCountries = [];
-    $seenSubcontinents = [];
-    $seenContinents = [];
-  
-    foreach (explode("|", $countryRaw) as $c) {
-  
-      $c = canonical_country_name($c);
-      if ($c === "") continue;
-  
-      $countryKey = mb_strtolower($c, "UTF-8");
-  
-      // deduplicate same country within reviewer
-      if (isset($seenCountries[$countryKey])) continue;
-      $seenCountries[$countryKey] = true;
-  
-      // country count
-      $countryCounts[$c] = ($countryCounts[$c] ?? 0) + 1;
-  
-      // territory lookup
-      if (!isset($territories[$c])) {
-        $unknownCountries[$c] = ($unknownCountries[$c] ?? 0) + 1;
-        continue;
-      }
-  
-      $t = $territories[$c];
-  
-      // subcontinent
-      $sub = trim((string)($t["subcontinent"] ?? ""));
-      if ($sub !== "") {
-  
-        $subKey = mb_strtolower($sub, "UTF-8");
-  
-        // deduplicate within reviewer
-        if (!isset($seenSubcontinents[$subKey])) {
-          $seenSubcontinents[$subKey] = true;
-          $subcontinentCounts[$sub] =
-            ($subcontinentCounts[$sub] ?? 0) + 1;
-        }
-      }
-  
-      // continent
-      $cont = trim((string)($t["continent"] ?? ""));
-      if ($cont !== "") {
-  
-        $contKey = mb_strtolower($cont, "UTF-8");
-  
-        // deduplicate within reviewer
-        if (!isset($seenContinents[$contKey])) {
-          $seenContinents[$contKey] = true;
-          $continentCounts[$cont] =
-            ($continentCounts[$cont] ?? 0) + 1;
-        }
-      }
-    }
-  }
-
   $affiliationRaw = trim((string)($r["affiliation"] ?? ""));
   
   if ($affiliationRaw !== "") {
@@ -279,232 +212,91 @@ foreach ($rows as $r) {
 }
 
 arsort($expertiseCounts);
-
-arsort($countryCounts);
-arsort($subcontinentCounts);
-arsort($continentCounts);
-arsort($unknownCountries);
-
 arsort($affiliationCounts);
 
-$continentTree = [];
+$totalAffiliationEntries = array_sum($affiliationCounts);
+$totalExpertiseSelections = array_sum($expertiseCounts);
 
-foreach ($subcontinentCounts as $sub => $subCnt) {
 
-  // find continent for this subcontinent
-  $continent = null;
+$countryCounts = [];
 
-  foreach ($territories as $t) {
-    if (($t["subcontinent"] ?? "") === $sub) {
-      $continent = $t["continent"] ?? "Unknown";
-      break;
-    }
+foreach ($rows as $r) {
+  $seenCountries = [];
+
+  foreach (explode("|", (string)($r["country"] ?? "")) as $c) {
+    $c = canonical_country_name(trim($c));
+    if ($c === "") continue;
+
+    $key = mb_strtolower($c, "UTF-8");
+    if (isset($seenCountries[$key])) continue;
+
+    $seenCountries[$key] = $c;
   }
 
-  if ($continent === null) {
-    $continent = "Unknown";
+  foreach ($seenCountries as $c) {
+    $countryCounts[$c] = ($countryCounts[$c] ?? 0) + 1;
   }
-
-  if (!isset($continentTree[$continent])) {
-    $continentTree[$continent] = [
-      "total" => 0,
-      "subs" => [],
-    ];
-  }
-
-  $continentTree[$continent]["subs"][$sub] = $subCnt;
 }
 
-foreach ($continentCounts as $continent => $cnt) {
+arsort($countryCounts);
+$totalCountryEntries = array_sum($countryCounts);
 
-  if (!isset($continentTree[$continent])) {
-    $continentTree[$continent] = [
-      "total" => 0,
-      "subs" => [],
-    ];
+
+$countryAffiliations = [];
+
+foreach ($rows as $r) {
+  $countryParts = array_map("trim", explode("|", (string)($r["country"] ?? "")));
+  $affParts     = array_map("trim", explode("|", (string)($r["affiliation"] ?? "")));
+
+  $n = max(count($countryParts), count($affParts));
+  $seenPairs = [];
+
+  for ($i = 0; $i < $n; $i++) {
+    $country = canonical_country_name($countryParts[$i] ?? "");
+    $aff = trim($affParts[$i] ?? "");
+
+    if ($country === "" || $aff === "") continue;
+
+    $pairKey = mb_strtolower($country . "||" . $aff, "UTF-8");
+    if (isset($seenPairs[$pairKey])) continue;
+    $seenPairs[$pairKey] = true;
+
+    $countryAffiliations[$country][$aff] =
+      ($countryAffiliations[$country][$aff] ?? 0) + 1;
   }
-
-  $continentTree[$continent]["total"] = $cnt;
 }
-
-uasort($continentTree, function($a, $b) {
-  return $b["total"] <=> $a["total"];
-});
-
-foreach ($continentTree as &$c) {
-  arsort($c["subs"]);
-}
-unset($c);
 
 
 $geoTree = [];
 
-foreach ($rows as $r) {
+foreach ($countryCounts as $country => $countryCnt) {
+  $t = $territories[$country] ?? null;
 
-  // -------------------------
-  // Countries
-  // -------------------------
+  $continent = $t["continent"] ?? "Unknown";
+  $sub       = $t["subcontinent"] ?? "Unknown";
 
-  $countries = [];
-  $countryRaw = trim((string)($r["country"] ?? ""));
-
-  foreach (explode("|", $countryRaw) as $c) {
-
-    $c = canonical_country_name(trim($c));
-
-    if ($c === "") continue;
-
-    $k = mb_strtolower($c, "UTF-8");
-
-    $countries[$k] = $c; // deduplicate
+  if (!isset($geoTree[$continent])) {
+    $geoTree[$continent] = [
+      "total" => 0,
+      "subs" => [],
+    ];
   }
 
-  // -------------------------
-  // Affiliations
-  // -------------------------
-
-  $affiliations = [];
-  $affRaw = trim((string)($r["affiliation"] ?? ""));
-
-  foreach (explode("|", $affRaw) as $a) {
-
-    $a = trim($a);
-
-    if ($a === "") continue;
-
-    $k = mb_strtolower($a, "UTF-8");
-
-    $affiliations[$k] = $a; // deduplicate
+  if (!isset($geoTree[$continent]["subs"][$sub])) {
+    $geoTree[$continent]["subs"][$sub] = [
+      "total" => 0,
+      "countries" => [],
+    ];
   }
 
-  // -------------------------
-  // Insert into geo tree
-  // -------------------------
+  $geoTree[$continent]["total"] += $countryCnt;
+  $geoTree[$continent]["subs"][$sub]["total"] += $countryCnt;
 
-  foreach ($countries as $country) {
-
-    $t = $territories[$country] ?? null;
-
-    $continent   = $t["continent"] ?? "Unknown";
-    $subcontinent = $t["subcontinent"] ?? "Unknown";
-
-    // continent
-    if (!isset($geoTree[$continent])) {
-      $geoTree[$continent] = [
-        "total" => 0,
-        "subs" => [],
-      ];
-    }
-
-    // subcontinent
-    if (!isset($geoTree[$continent]["subs"][$subcontinent])) {
-      $geoTree[$continent]["subs"][$subcontinent] = [
-        "total" => 0,
-        "countries" => [],
-      ];
-    }
-
-    // country
-    if (!isset($geoTree[$continent]["subs"][$subcontinent]["countries"][$country])) {
-      $geoTree[$continent]["subs"][$subcontinent]["countries"][$country] = [
-        "total" => 0,
-        "affiliations" => [],
-      ];
-    }
-
-    // increment totals
-    $geoTree[$continent]["total"]++;
-    $geoTree[$continent]["subs"][$subcontinent]["total"]++;
-    $geoTree[$continent]["subs"][$subcontinent]["countries"][$country]["total"]++;
-
-
-    $countryParts = array_map('trim', explode("|", (string)($r["country"] ?? "")));
-    $affParts     = array_map('trim', explode("|", (string)($r["affiliation"] ?? "")));
-    
-    $n = max(count($countryParts), count($affParts));
-    
-    $seenCountryAffPairs = [];
-    
-    for ($i = 0; $i < $n; $i++) {
-      $country = canonical_country_name($countryParts[$i] ?? "");
-      $aff     = trim($affParts[$i] ?? "");
-    
-      if ($country === "") continue;
-    
-      // Deduplicate exact country-affiliation pair per reviewer
-      $pairKey = mb_strtolower($country . "||" . $aff, "UTF-8");
-      if (isset($seenCountryAffPairs[$pairKey])) continue;
-      $seenCountryAffPairs[$pairKey] = true;
-    
-      $t = $territories[$country] ?? null;
-    
-      $continent    = $t["continent"] ?? "Unknown";
-      $subcontinent = $t["subcontinent"] ?? "Unknown";
-    
-      if (!isset($geoTree[$continent])) {
-        $geoTree[$continent] = [
-          "total" => 0,
-          "subs" => [],
-        ];
-      }
-    
-      if (!isset($geoTree[$continent]["subs"][$subcontinent])) {
-        $geoTree[$continent]["subs"][$subcontinent] = [
-          "total" => 0,
-          "countries" => [],
-        ];
-      }
-    
-      if (!isset($geoTree[$continent]["subs"][$subcontinent]["countries"][$country])) {
-        $geoTree[$continent]["subs"][$subcontinent]["countries"][$country] = [
-          "total" => 0,
-          "affiliations" => [],
-        ];
-      }
-    
-      // Count this country once for this reviewer/country pair
-      $geoTree[$continent]["total"]++;
-      $geoTree[$continent]["subs"][$subcontinent]["total"]++;
-      $geoTree[$continent]["subs"][$subcontinent]["countries"][$country]["total"]++;
-    
-      // Add only the affiliation in the corresponding position
-      if ($aff !== "") {
-        $geoTree[$continent]["subs"][$subcontinent]["countries"][$country]["affiliations"][$aff] =
-          ($geoTree[$continent]["subs"][$subcontinent]["countries"][$country]["affiliations"][$aff] ?? 0) + 1;
-      }
-    }
-
-//    // affiliations under country
-//    foreach ($affiliations as $aff) {
-//
-//      $geoTree[$continent]["subs"][$subcontinent]["countries"][$country]["affiliations"][$aff]
-//        = ($geoTree[$continent]["subs"][$subcontinent]["countries"][$country]["affiliations"][$aff] ?? 0) + 1;
-//    }
-  }
+  $geoTree[$continent]["subs"][$sub]["countries"][$country] = [
+    "total" => $countryCnt,
+    "affiliations" => $countryAffiliations[$country] ?? [],
+  ];
 }
-
-uasort($geoTree, fn($a,$b) => $b["total"] <=> $a["total"]);
-
-foreach ($geoTree as &$cont) {
-
-  uasort($cont["subs"], fn($a,$b) => $b["total"] <=> $a["total"]);
-
-  foreach ($cont["subs"] as &$sub) {
-
-    uasort($sub["countries"], fn($a,$b) => $b["total"] <=> $a["total"]);
-
-    foreach ($sub["countries"] as &$country) {
-      arsort($country["affiliations"]);
-    }
-  }
-}
-
-unset($cont, $sub, $country);
-
-$totalCountryEntries = array_sum($countryCounts);
-$totalAffiliationEntries = array_sum($affiliationCounts);
-
-$totalExpertiseSelections = array_sum($expertiseCounts);
 
 
 $gaps = [];
