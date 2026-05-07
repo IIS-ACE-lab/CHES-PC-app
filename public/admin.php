@@ -42,6 +42,13 @@ $GAP_THRESHOLD = 3;
 $EXPERTISE_TAXONOMY = $config['expertise_taxonomy'] ?? [];
 
 
+require_once __DIR__ . '/territories.php';
+
+if (!isset($territories) || !is_array($territories)) {
+  die("territories.php did not provide \$territories");
+}
+
+
 // ---- Access control ----
 $k = $_GET['k'] ?? '';
 
@@ -77,7 +84,7 @@ $csp_nonce = base64_encode(random_bytes(16));
 header("X-Frame-Options: DENY");
 header("X-Content-Type-Options: nosniff");
 header("Referrer-Policy: no-referrer");
-header("Content-Security-Policy: default-src 'self'; style-src 'self' 'nonce-$csp_nonce'; frame-ancestors 'none'; base-uri 'none';");
+header("Content-Security-Policy: default-src 'self'; script-src 'self' 'nonce-$csp_nonce'; style-src 'self' 'nonce-$csp_nonce'; frame-ancestors 'none'; base-uri 'none';");
 
 function pct(int $count, int $total): string {
   if ($total <= 0) return "0.0%";
@@ -126,6 +133,11 @@ foreach ($EXPERTISE_TAXONOMY as $cat => $topics) {
 
 $countryCounts = [];
 
+$subcontinentCounts = [];
+$continentCounts = [];
+
+$unknownCountries = [];
+
 $affiliationCounts = [];
 
 $total = 0;
@@ -165,22 +177,59 @@ foreach ($rows as $r) {
   $countryRaw = trim((string)($r["country"] ?? ""));
   
   if ($countryRaw !== "") {
+  
     $seenCountries = [];
+    $seenSubcontinents = [];
+    $seenContinents = [];
   
     foreach (explode("|", $countryRaw) as $c) {
+  
       $c = trim($c);
       if ($c === "") continue;
   
-      // Deduplicate per reviewer, case-insensitive
-      $key = mb_strtolower($c, "UTF-8");
-      if (isset($seenCountries[$key])) continue;
+      $countryKey = mb_strtolower($c, "UTF-8");
   
-      $seenCountries[$key] = $c;
-    }
+      // deduplicate same country within reviewer
+      if (isset($seenCountries[$countryKey])) continue;
+      $seenCountries[$countryKey] = true;
   
-    if (count($seenCountries) > 0) {
-      foreach ($seenCountries as $c) {
-        $countryCounts[$c] = ($countryCounts[$c] ?? 0) + 1;
+      // country count
+      $countryCounts[$c] = ($countryCounts[$c] ?? 0) + 1;
+  
+      // territory lookup
+      if (!isset($territories[$c])) {
+        $unknownCountries[$c] = ($unknownCountries[$c] ?? 0) + 1;
+        continue;
+      }
+  
+      $t = $territories[$c];
+  
+      // subcontinent
+      $sub = trim((string)($t["subcontinent"] ?? ""));
+      if ($sub !== "") {
+  
+        $subKey = mb_strtolower($sub, "UTF-8");
+  
+        // deduplicate within reviewer
+        if (!isset($seenSubcontinents[$subKey])) {
+          $seenSubcontinents[$subKey] = true;
+          $subcontinentCounts[$sub] =
+            ($subcontinentCounts[$sub] ?? 0) + 1;
+        }
+      }
+  
+      // continent
+      $cont = trim((string)($t["continent"] ?? ""));
+      if ($cont !== "") {
+  
+        $contKey = mb_strtolower($cont, "UTF-8");
+  
+        // deduplicate within reviewer
+        if (!isset($seenContinents[$contKey])) {
+          $seenContinents[$contKey] = true;
+          $continentCounts[$cont] =
+            ($continentCounts[$cont] ?? 0) + 1;
+        }
       }
     }
   }
@@ -210,8 +259,101 @@ foreach ($rows as $r) {
 }
 
 arsort($expertiseCounts);
+
 arsort($countryCounts);
+arsort($subcontinentCounts);
+arsort($continentCounts);
+arsort($unknownCountries);
+
 arsort($affiliationCounts);
+
+$continentTree = [];
+
+foreach ($subcontinentCounts as $sub => $subCnt) {
+
+  // find continent for this subcontinent
+  $continent = null;
+
+  foreach ($territories as $t) {
+    if (($t["subcontinent"] ?? "") === $sub) {
+      $continent = $t["continent"] ?? "Unknown";
+      break;
+    }
+  }
+
+  if ($continent === null) {
+    $continent = "Unknown";
+  }
+
+  if (!isset($continentTree[$continent])) {
+    $continentTree[$continent] = [
+      "total" => 0,
+      "subs" => [],
+    ];
+  }
+
+  $continentTree[$continent]["subs"][$sub] = $subCnt;
+}
+
+foreach ($continentCounts as $continent => $cnt) {
+
+  if (!isset($continentTree[$continent])) {
+    $continentTree[$continent] = [
+      "total" => 0,
+      "subs" => [],
+    ];
+  }
+
+  $continentTree[$continent]["total"] = $cnt;
+}
+
+uasort($continentTree, function($a, $b) {
+  return $b["total"] <=> $a["total"];
+});
+
+foreach ($continentTree as &$c) {
+  arsort($c["subs"]);
+}
+unset($c);
+
+$geoTree = []; // continent => [total, subs => subcontinent => [total, countries => country => count]]
+
+$geoTree = [];
+
+foreach ($countryCounts as $country => $countryCnt) {
+  $t = $territories[$country] ?? null;
+
+  $continent = $t["continent"] ?? "Unknown";
+  $sub       = $t["subcontinent"] ?? "Unknown";
+
+  if (!isset($geoTree[$continent])) {
+    $geoTree[$continent] = [
+      "total" => $continentCounts[$continent] ?? 0,
+      "subs" => [],
+    ];
+  }
+
+  if (!isset($geoTree[$continent]["subs"][$sub])) {
+    $geoTree[$continent]["subs"][$sub] = [
+      "total" => $subcontinentCounts[$sub] ?? 0,
+      "countries" => [],
+    ];
+  }
+
+  $geoTree[$continent]["subs"][$sub]["countries"][$country] = $countryCnt;
+}
+
+uasort($geoTree, fn($a, $b) => $b["total"] <=> $a["total"]);
+
+foreach ($geoTree as &$continentData) {
+  uasort($continentData["subs"], fn($a, $b) => $b["total"] <=> $a["total"]);
+
+  foreach ($continentData["subs"] as &$subData) {
+    arsort($subData["countries"]);
+  }
+}
+unset($continentData, $subData);
+
 
 $gaps = [];
 foreach ($expertiseCounts as $tag => $cnt) {
@@ -232,7 +374,7 @@ asort($gaps);
     h2 { margin: 0 0 10px; }
     .card { border: 1px solid #ddd; border-radius: 14px; padding: 16px; margin: 14px 0; background: #fafafa; }
     .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-    table { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid #ddd; border-radius: 10px; overflow: hidden; }
+    table { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid #ddd; border-radius: 10px; overflow: hidden; margin-top:10px; }
     th, td { padding: 10px 12px; border-bottom: 1px solid #eee; text-align: left; vertical-align: top; }
     th { background: #f5f5f5; font-weight: 700; }
     tr:last-child td { border-bottom: none; }
@@ -242,6 +384,43 @@ asort($gaps);
     .btnrow { display:flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
     button { padding: 10px 14px; font-size: 16px; cursor:pointer; }
     .primary { font-weight: 700; }
+
+.geo-toggle {
+  cursor: pointer;
+  user-select: none;
+}
+
+.geo-toggle:hover {
+  text-decoration: underline;
+}
+
+.geo-continent-row {
+  font-weight: 700;
+  background: #f3f3f3;
+}
+
+.geo-subcontinent-row {
+  font-weight: 600;
+}
+
+.geo-subcontinent-row td:first-child {
+  padding-left: 24px;
+}
+
+.geo-country-row td:first-child {
+  padding-left: 48px;
+  color: #555;
+}
+
+.geo-hidden {
+  display: none;
+}
+
+.geo-arrow {
+  display: inline-block;
+  width: 1.2em;
+}
+
   </style>
 </head>
 <body>
@@ -264,7 +443,7 @@ asort($gaps);
       <tr><th>Total</th><th><?= (int)$total ?></th><th><?= h(pct($total, $total)) ?></th></tr>
     </table>
 
-    <div class="muted small" style="margin-top:10px;">
+    <div class="muted small">
       <?php if ($mostRecentUpdate !== ""): ?>
         Most recent update: <b><?= h($mostRecentUpdate) ?></b>
         <span class="muted">(token: <span class="mono"><?= h($mostRecentToken) ?></span>)</span>
@@ -317,7 +496,7 @@ asort($gaps);
 <div class="card">
   <h2>Country overview</h2>
 
-  <table style="margin-top:10px;">
+  <table>
     <tr><th>Country</th><th>Count</th><th>Share</th></tr>
 
     <?php if (count($countryCounts) === 0): ?>
@@ -335,9 +514,62 @@ asort($gaps);
 </div>
 
 <div class="card">
+  <h2>Geographic overview</h2>
+
+  <table>
+    <tr>
+      <th>Region</th>
+      <th>Count</th>
+      <th>Share</th>
+    </tr>
+
+    <?php $ci = 0; ?>
+    <?php foreach ($geoTree as $continent => $continentData): ?>
+      <?php
+        $continentId = "geo-cont-" . (++$ci);
+        $si = 0;
+      ?>
+    
+      <tr class="geo-continent-row geo-toggle"
+          data-toggle-prefix="<?= h($continentId) ?>">
+        <td>
+          <span class="geo-arrow">▸</span><?= h($continent) ?>
+        </td>
+        <td><?= (int)$continentData["total"] ?></td>
+        <td><?= h(pct((int)$continentData["total"], $total)) ?></td>
+      </tr>
+    
+      <?php foreach ($continentData["subs"] as $sub => $subData): ?>
+        <?php $subId = $continentId . "-sub-" . (++$si); ?>
+    
+        <tr class="geo-subcontinent-row geo-toggle geo-hidden"
+            data-group="<?= h($continentId) ?>"
+            data-toggle-prefix="<?= h($subId) ?>">
+          <td>
+            <span class="geo-arrow">▸</span><?= h($sub) ?>
+          </td>
+          <td><?= (int)$subData["total"] ?></td>
+          <td><?= h(pct((int)$subData["total"], $total)) ?></td>
+        </tr>
+    
+        <?php foreach ($subData["countries"] as $country => $countryCnt): ?>
+          <tr class="geo-country-row geo-hidden"
+              data-group="<?= h($subId) ?>">
+            <td><?= h($country) ?></td>
+            <td><?= (int)$countryCnt ?></td>
+            <td><?= h(pct((int)$countryCnt, $total)) ?></td>
+          </tr>
+        <?php endforeach; ?>
+    
+      <?php endforeach; ?>
+    <?php endforeach; ?>
+  </table>
+</div>
+
+<div class="card">
   <h2>Affiliation overview</h2>
 
-  <table style="margin-top:10px;">
+  <table>
     <tr><th>Affiliation</th><th>Count</th><th>Share</th></tr>
 
     <?php if (count($affiliationCounts) === 0): ?>
@@ -364,6 +596,36 @@ asort($gaps);
     </form>
   </div>
 <?php endif; ?>
+
+<script nonce="<?= h($csp_nonce) ?>">
+document.addEventListener("click", (e) => {
+  const row = e.target.closest(".geo-toggle");
+  if (!row) return;
+
+  const prefix = row.dataset.togglePrefix;
+  if (!prefix) return;
+
+  const children = document.querySelectorAll(`[data-group="${CSS.escape(prefix)}"]`);
+  const expanding = [...children].some(el => el.classList.contains("geo-hidden"));
+
+  children.forEach(el => {
+    el.classList.toggle("geo-hidden", !expanding);
+
+    // If collapsing a continent, also collapse all country rows below its subcontinents
+    if (!expanding && el.classList.contains("geo-subcontinent-row")) {
+      const subPrefix = el.dataset.togglePrefix;
+      document.querySelectorAll(`[data-group="${CSS.escape(subPrefix)}"]`)
+        .forEach(c => c.classList.add("geo-hidden"));
+
+      const arrow = el.querySelector(".geo-arrow");
+      if (arrow) arrow.textContent = "▸";
+    }
+  });
+
+  const arrow = row.querySelector(".geo-arrow");
+  if (arrow) arrow.textContent = expanding ? "▾" : "▸";
+});
+</script>
 
 </body>
 </html>

@@ -260,7 +260,6 @@ window.COUNTRIES = [
   "Uganda",
   "UK",
   "Ukraine",
-  "UN",
   "United Arab Emirates",
   "United Kingdom",
   "Uruguay",
