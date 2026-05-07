@@ -146,6 +146,25 @@ $withExpertise = 0;
 $mostRecentUpdate = "";
 $mostRecentToken = "";
 
+
+function canonical_country_name(string $country): string {
+  $c = trim($country);
+
+  // normalize whitespace
+  $c = preg_replace('/\s+/', ' ', $c);
+
+  // alias table (case-insensitive keys)
+  static $aliases = [
+    'the netherlands' => 'Netherlands',
+    'deutschland' => 'Germany',
+  ];
+
+  $k = mb_strtolower($c, 'UTF-8');
+
+  return $aliases[$k] ?? $c;
+}
+
+
 foreach ($rows as $r) {
   $total++;
 
@@ -184,7 +203,7 @@ foreach ($rows as $r) {
   
     foreach (explode("|", $countryRaw) as $c) {
   
-      $c = trim($c);
+      $c = canonical_country_name($c);
       if ($c === "") continue;
   
       $countryKey = mb_strtolower($c, "UTF-8");
