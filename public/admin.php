@@ -443,6 +443,9 @@ foreach ($geoTree as &$cont) {
 
 unset($cont, $sub, $country);
 
+$totalCountryEntries = array_sum($countryCounts);
+$totalAffiliationEntries = array_sum($affiliationCounts);
+
 
 $gaps = [];
 foreach ($expertiseCounts as $tag => $cnt) {
@@ -601,7 +604,7 @@ asort($gaps);
         <tr>
           <td><?= h($country) ?></td>
           <td><?= (int)$cnt ?></td>
-          <td><?= h(pct((int)$cnt, $total)) ?></td>
+          <td><?= h(pct((int)$cnt, $totalCountryEntries)) ?></td>
         </tr>
       <?php endforeach; ?>
     <?php endif; ?>
@@ -631,7 +634,7 @@ asort($gaps);
           <span class="geo-arrow">▸</span><?= h($continent) ?>
         </td>
         <td><?= (int)$continentData["total"] ?></td>
-        <td><?= h(pct((int)$continentData["total"], $total)) ?></td>
+        <td><?= h(pct((int)$continentData["total"], $totalCountryEntries)) ?></td>
       </tr>
     
       <?php foreach ($continentData["subs"] as $sub => $subData): ?>
@@ -644,7 +647,7 @@ asort($gaps);
             <span class="geo-arrow">▸</span><?= h($sub) ?>
           </td>
           <td><?= (int)$subData["total"] ?></td>
-          <td><?= h(pct((int)$subData["total"], $total)) ?></td>
+          <td><?= h(pct((int)$subData["total"], $totalCountryEntries)) ?></td>
         </tr>
     
         <?php foreach ($subData["countries"] as $country => $countryData): ?>
@@ -658,7 +661,7 @@ asort($gaps);
               data-toggle-prefix="<?= h($countryId) ?>">
             <td><span class="geo-arrow">▸</span><?= h($country) ?></td>
             <td><?= $countryCnt ?></td>
-            <td><?= h(pct($countryCnt, $total)) ?></td>
+            <td><?= h(pct($countryCnt, $totalCountryEntries)) ?></td>
           </tr>
         
           <?php foreach (($countryData["affiliations"] ?? []) as $aff => $affCnt): ?>
@@ -668,7 +671,7 @@ asort($gaps);
                 ↳ <?= h($aff) ?>
               </td>
               <td><?= (int)$affCnt ?></td>
-              <td><?= h(pct((int)$affCnt, $total)) ?></td>
+              <td><?= h(pct((int)$affCnt, $totalAffiliationEntries)) ?></td>
             </tr>
           <?php endforeach; ?>
 
@@ -691,7 +694,7 @@ asort($gaps);
         <tr>
           <td><?= h($affiliation) ?></td>
           <td><?= (int)$cnt ?></td>
-          <td><?= h(pct((int)$cnt, $total)) ?></td>
+          <td><?= h(pct((int)$cnt, $totalAffiliationEntries)) ?></td>
         </tr>
       <?php endforeach; ?>
     <?php endif; ?>
