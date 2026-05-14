@@ -1,0 +1,16 @@
+{greeting}
+
+This is a brief reminder about the CHES 2027 reviewer invitation.
+
+Please use your personal link below to accept or decline the invitation:
+
+  {link}
+
+Please find the original invitation email below.
+
+Thank you!
+
+Best regards,
+  Thomas Roche and Ruben Niederhagen
+  CHES 2027 PC Co-Chairs
+
