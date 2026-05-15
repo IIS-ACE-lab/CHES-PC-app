@@ -1,6 +1,15 @@
 <?php
 declare(strict_types=1);
 
+session_set_cookie_params([
+  'lifetime' => 0,
+  'path' => '',
+  'secure' => true,      // use false only for local HTTP testing
+  'httponly' => true,
+  'samesite' => 'Strict',
+]);
+
+
 session_start();
 
 function h(string $s): string { return htmlspecialchars($s, ENT_QUOTES, 'UTF-8'); }
@@ -50,23 +59,195 @@ if (!isset($territories) || !is_array($territories)) {
 
 
 // ---- Access control ----
-$k = $_GET['k'] ?? '';
 
-// already logged in?
-if (!empty($_SESSION['admin_ok'])) {
-  // ok
-} else {
-  // allow "login" via ?k=...
-  if (!hash_equals($ADMIN_KEY, $k)) {
-    http_response_code(403);
-    die("Forbidden.");
-  }
-  $_SESSION['admin_ok'] = true;
-
-  // redirect to clean URL (no k)
-  header("Location: " . strtok($_SERVER["REQUEST_URI"], '?'));
+if (isset($_GET['logout'])) {
+  $_SESSION = [];
+  session_destroy();
+  header("Location: admin.php");
   exit;
 }
+
+$login_error = '';
+
+$failures = (int)($_SESSION['admin_failures'] ?? 0);
+$lastFail = (int)($_SESSION['admin_last_failure'] ?? 0);
+
+if ($failures >= 5 && time() - $lastFail < 300) {
+  http_response_code(429);
+  die('Too many failed login attempts. Please try again later.');
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['admin_key'])) {
+  $key = (string)$_POST['admin_key'];
+
+  if (hash_equals($ADMIN_KEY, $key)) {
+    session_regenerate_id(true);
+    $_SESSION['admin_ok'] = true;
+
+    unset($_SESSION['admin_failures'], $_SESSION['admin_last_failure']);
+
+    header("Location: " . strtok($_SERVER["REQUEST_URI"], '?'));
+    exit;
+  }
+
+  $login_error = 'Invalid admin key.';
+
+  $_SESSION['admin_failures'] = ($_SESSION['admin_failures'] ?? 0) + 1;
+  $_SESSION['admin_last_failure'] = time();
+}
+
+if (empty($_SESSION['admin_ok'])) {
+  ?>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Admin login</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<style>
+body {
+  font-family: system-ui, Arial, sans-serif;
+
+  margin: 0;
+  min-height: 100vh;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.login-card {
+  width: 100%;
+  max-width: 420px;
+
+  background: #fff;
+
+  border: 1px solid #d8dde5;
+  border-radius: 16px;
+
+  padding: 28px;
+
+  box-shadow:
+    0 6px 20px rgba(0,0,0,0.06);
+}
+
+h1 {
+  margin-top: 0;
+  margin-bottom: 8px;
+}
+
+.muted {
+  color: #555;
+}
+
+label {
+  display: block;
+  margin-top: 18px;
+  font-weight: 600;
+}
+
+input[type="password"] {
+  width: 100%;
+
+  box-sizing: border-box;
+
+  margin-top: 8px;
+  padding: 12px;
+
+  font-size: 16px;
+
+  border: 1px solid #c8ced8;
+  border-radius: 10px;
+
+  background: #fff;
+}
+
+input[type="password"]:focus {
+  outline: 2px solid #99c2ff;
+  border-color: #7aa7e8;
+}
+
+button {
+  margin-top: 20px;
+
+  padding: 12px 16px;
+
+  border: 1px solid #2d5fb3;
+  border-radius: 10px;
+
+
+  font-size: 16px;
+  font-weight: 600;
+
+  cursor: pointer;
+}
+
+button:hover {
+  background: #234f98;
+}
+
+.error {
+  margin-top: 16px;
+
+  padding: 10px 12px;
+
+  border-radius: 10px;
+
+  background: #fff0f0;
+  border: 1px solid #e0b4b4;
+
+  color: #8a2222;
+}
+
+.small {
+  font-size: 14px;
+}
+</style>
+</head>
+
+<body>
+
+<div class="login-card">
+
+  <h1>CHES 2027 Admin</h1>
+
+  <div class="muted small">
+    Reviewer administration access
+  </div>
+
+  <?php if ($login_error !== ''): ?>
+    <div class="error">
+      <?= h($login_error) ?>
+    </div>
+  <?php endif; ?>
+
+  <form method="post">
+
+    <label for="admin_key">
+      Admin key
+    </label>
+
+    <input id="admin_key"
+           type="password"
+           name="admin_key"
+           autocomplete="current-password"
+           autofocus>
+
+    <button type="submit">
+      Login
+    </button>
+
+  </form>
+
+</div>
+
+</body>
+</html>
+<?php
+exit;
+}
+
 
 function db(string $dbPath): PDO {
   static $pdo = null;
@@ -432,7 +613,9 @@ if (($_GET["download"] ?? "") === "csv") {
 }
 
 .admin-header-actions {
-  flex-shrink: 0;
+  display: flex;
+  gap: 10px;
+  align-items: center;
 }
 
 .admin-header-actions form {
@@ -543,6 +726,30 @@ if (($_GET["download"] ?? "") === "csv") {
   display: none;
 }
 
+.logout-btn {
+  display: inline-block;
+
+  padding: 8px 12px;
+
+  border: 1px solid #d3d8e0;
+  border-radius: 10px;
+
+  background: #f6f7f9;
+  color: #334;
+
+  text-decoration: none;
+  font-weight: 600;
+
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.logout-btn:hover {
+  background: #eceff4;
+  border-color: #bcc4cf;
+}
+
   </style>
 </head>
 <body>
@@ -565,6 +772,11 @@ if (($_GET["download"] ?? "") === "csv") {
         Download CSV
       </button>
     </form>
+
+    <a class="logout-btn"
+       href="admin.php?logout=1">
+      Logout
+    </a>
   </div>
 </div>
 
