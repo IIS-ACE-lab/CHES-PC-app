@@ -305,6 +305,52 @@ foreach ($expertiseCounts as $tag => $cnt) {
 }
 asort($gaps);
 
+
+if (($_GET["download"] ?? "") === "csv") {
+  $pdo = db($dbPath);
+
+  // Get all reviewer columns except token
+  $cols = [];
+  $stmt = $pdo->query("PRAGMA table_info(reviewers)");
+  foreach ($stmt->fetchAll() as $col) {
+    $name = (string)$col["name"];
+    if ($name !== "token") $cols[] = $name;
+  }
+
+  if (!$cols) {
+    http_response_code(500);
+    die("No exportable columns found.");
+  }
+
+  $quotedCols = array_map(fn($c) => '"' . str_replace('"', '""', $c) . '"', $cols);
+
+  header("Content-Type: text/csv; charset=utf-8");
+  header('Content-Disposition: attachment; filename="reviewers_export.csv"');
+  header("X-Content-Type-Options: nosniff");
+  header("Cache-Control: no-store, no-cache, must-revalidate, max-age=0");
+  header("Pragma: no-cache");
+
+  $out = fopen("php://output", "w");
+
+  // Header row
+  fputcsv($out, $cols, ",", '"', "\\");
+
+  $q = "SELECT " . implode(", ", $quotedCols) . " FROM reviewers ORDER BY family_name COLLATE NOCASE, given_names COLLATE NOCASE, invite_email COLLATE NOCASE";
+  $stmt = $pdo->query($q);
+
+  while ($r = $stmt->fetch(PDO::FETCH_ASSOC)) {
+    $line = [];
+    foreach ($cols as $c) {
+      $line[] = (string)($r[$c] ?? "");
+    }
+    fputcsv($out, $line, ",", '"', "\\");
+  }
+
+  fclose($out);
+  exit;
+}
+
+
 ?>
 <!doctype html>
 <html lang="en">
@@ -371,200 +417,432 @@ asort($gaps);
   font-size: 0.95em;
 }
 
+.admin-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.admin-header h1 {
+  margin-bottom: 4px;
+}
+
+.admin-header-actions {
+  flex-shrink: 0;
+}
+
+.admin-header-actions form {
+  margin: 0;
+}
+
+.sort-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+
+  color: #0645ad;
+
+  text-decoration: none;
+
+  white-space: nowrap;
+}
+
+.sort-btn.sort-active {
+  text-decoration: underline;
+}
+
+.sort-btn::after {
+  display: inline-block;
+  width: 1em;
+
+  margin-left: 0.25em;
+
+  text-decoration: none;
+  font-size: 0.8em;
+
+  content: "▲";
+  visibility: hidden;
+}
+
+.sort-btn.sort-active[data-dir="asc"]::after {
+  content: "▲";
+  visibility: visible;
+}
+
+.sort-btn.sort-active[data-dir="desc"]::after {
+  content: "▼";
+  visibility: visible;
+}
+
+.tabs-wrap {
+  margin: 20px 0 18px;
+}
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  align-items: flex-end;
+}
+
+.tab-btn {
+  appearance: none;
+  border: 1px solid #bfc7d1;
+  border-bottom: none;
+
+  color: #334;
+
+  padding: 10px 16px;
+  margin: 0;
+
+  border-radius: 10px 10px 0 0;
+
+  font: inherit;
+  font-weight: 600;
+
+  cursor: pointer;
+
+  position: relative;
+  top: 1px;
+
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+
+  z-index: 0;
+}
+
+.tab-btn:hover {
+  background: #f5f7fb;
+}
+
+.tab-btn.active {
+  background: #fff;
+  color: #111;
+
+  z-index: 2;
+}
+
+.tabs-wrap {
+  border: 1px solid #bfc7d1;
+  border-radius: 0 10px 10px 10px;
+
+  padding-left: 18px;
+  padding-right: 18px;
+  padding-top: 8px;
+  margin-top: 0px;
+}
+
+.tab-panel.hidden {
+  display: none;
+}
+
   </style>
 </head>
 <body>
 
-<h1>Reviewer Admin</h1>
-<div class="muted small">Data source: <span class="mono"><?= h(basename($dbPath)) ?></span></div>
-
-<div class="grid">
-  <div class="card">
-    <h2>Invitation status</h2>
-    <table>
-      <tr><th>Status</th><th>Count</th><th>Share</th></tr>
-      <tr><td>Open (invited)</td><td><?= (int)$statusCounts["invited"] ?></td><td><?= h(pct((int)$statusCounts["invited"], $total)) ?></td></tr>
-<!--
-      <tr><td>Opened (optional)</td><td><?= (int)$statusCounts["opened"] ?></td><td><?= h(pct((int)$statusCounts["opened"], $total)) ?></td></tr>
--->
-      <tr><td>Accepted</td><td><?= (int)$statusCounts["accepted"] ?></td><td><?= h(pct((int)$statusCounts["accepted"], $total)) ?></td></tr>
-      <tr><td>Registered (saved details)</td><td><?= (int)$statusCounts["registered"] ?></td><td><?= h(pct((int)$statusCounts["registered"], $total)) ?></td></tr>
-      <tr><td>Declined</td><td><?= (int)$statusCounts["declined"] ?></td><td><?= h(pct((int)$statusCounts["declined"], $total)) ?></td></tr>
-      <tr><td>Invalid email</td><td><?= (int)$statusCounts["invalid_email"] ?></td><td><?= h(pct((int)$statusCounts["invalid_email"], $total)) ?></td></tr>
-      <tr><td>Unknown/other</td><td><?= (int)$statusCounts["unknown"] ?></td><td><?= h(pct((int)$statusCounts["unknown"], $total)) ?></td></tr>
-      <tr><th>Total</th><th><?= (int)$total ?></th><th><?= h(pct($total, $total)) ?></th></tr>
-    </table>
-
+<div class="admin-header">
+  <div>
+    <h1>Reviewer Admin</h1>
     <div class="muted small">
-      <?php if ($mostRecentUpdate !== ""): ?>
-        Most recent update: <b><?= h($mostRecentUpdate) ?></b>
-        <span class="muted">(token: <span class="mono"><?= h($mostRecentToken) ?></span>)</span>
-      <?php else: ?>
-        No updates recorded yet.
-      <?php endif; ?>
+      Data source:
+      <span class="mono"><?= h(basename($dbPath)) ?></span>
     </div>
   </div>
 
-  <div class="card">
-    <h2>Expertise overview</h2>
-    <div class="muted small">Reviewers with at least one expertise tag: <b><?= (int)$withExpertise ?></b> / <?= (int)$total ?></div>
-    <div class="muted small">Gap threshold: ≤ <?= (int)$GAP_THRESHOLD ?></div>
-    <div class="muted small">Distinct expertise tags used: <b><?= (int)count($expertiseCounts) ?></b></div>
-  </div>
-</div>
-
-<div class="card">
-  <h2>Structured expertise coverage</h2>
-  <table>
-    <tr><th>Expertise</th><th>Count</th><th>Share</th></tr>
-    <?php if (count($expertiseCounts) === 0): ?>
-      <tr><td colspan="3" class="muted">No expertise selections recorded yet.</td></tr>
-    <?php else: ?>
-      <?php foreach ($expertiseCounts as $tag => $cnt): ?>
-        <tr>
-          <td><?= h($tag) ?></td>
-          <td><?= (int)$cnt ?></td>
-          <td><?= h(pct((int)$cnt, $totalExpertiseSelections)) ?></td>
-        </tr>
-      <?php endforeach; ?>
-    <?php endif; ?>
-  </table>
-</div>
-
-<div class="card">
-  <h2>Potential gaps (≤ <?= (int)$GAP_THRESHOLD ?>)</h2>
-  <table>
-    <tr><th>Expertise</th><th>Count</th></tr>
-    <?php if (count($gaps) === 0): ?>
-      <tr><td colspan="2" class="muted">No gaps detected at this threshold.</td></tr>
-    <?php else: ?>
-      <?php foreach ($gaps as $tag => $cnt): ?>
-        <tr><td><?= h($tag) ?></td><td><?= (int)$cnt ?></td></tr>
-      <?php endforeach; ?>
-    <?php endif; ?>
-  </table>
-</div>
-
-<div class="card">
-  <h2>Country overview</h2>
-
-  <table>
-    <tr><th>Country</th><th>Count</th><th>Share</th></tr>
-
-    <?php if (count($countryCounts) === 0): ?>
-      <tr><td colspan="3" class="muted">No countries recorded yet.</td></tr>
-    <?php else: ?>
-      <?php foreach ($countryCounts as $country => $cnt): ?>
-        <tr>
-          <td><?= h($country) ?></td>
-          <td><?= (int)$cnt ?></td>
-          <td><?= h(pct((int)$cnt, $totalCountryEntries)) ?></td>
-        </tr>
-      <?php endforeach; ?>
-    <?php endif; ?>
-  </table>
-</div>
-
-<div class="card">
-  <h2>Geographic overview</h2>
-
-  <table>
-    <tr>
-      <th>Region</th>
-      <th>Count</th>
-      <th>Share</th>
-    </tr>
-
-    <?php $ci = 0; ?>
-    <?php foreach ($geoTree as $continent => $continentData): ?>
-      <?php
-        $continentId = "geo-cont-" . (++$ci);
-        $si = 0;
-      ?>
-    
-      <tr class="geo-continent-row geo-toggle"
-          data-toggle-prefix="<?= h($continentId) ?>">
-        <td>
-          <span class="geo-arrow">▸</span><?= h($continent) ?>
-        </td>
-        <td><?= (int)$continentData["total"] ?></td>
-        <td><?= h(pct((int)$continentData["total"], $totalCountryEntries)) ?></td>
-      </tr>
-    
-      <?php foreach ($continentData["subs"] as $sub => $subData): ?>
-        <?php $subId = $continentId . "-sub-" . (++$si); ?>
-    
-        <tr class="geo-subcontinent-row geo-toggle geo-hidden"
-            data-group="<?= h($continentId) ?>"
-            data-toggle-prefix="<?= h($subId) ?>">
-          <td>
-            <span class="geo-arrow">▸</span><?= h($sub) ?>
-          </td>
-          <td><?= (int)$subData["total"] ?></td>
-          <td><?= h(pct((int)$subData["total"], $totalCountryEntries)) ?></td>
-        </tr>
-    
-        <?php foreach ($subData["countries"] as $country => $countryData): ?>
-          <?php
-            $countryId = $subId . '-country-' . (++$countryIdx);
-            $countryCnt = (int)($countryData["total"] ?? 0);
-          ?>
- 
-          <tr class="geo-country-row geo-toggle geo-hidden"
-              data-group="<?= h($subId) ?>"
-              data-toggle-prefix="<?= h($countryId) ?>">
-            <td><span class="geo-arrow">▸</span><?= h($country) ?></td>
-            <td><?= $countryCnt ?></td>
-            <td><?= h(pct($countryCnt, $totalCountryEntries)) ?></td>
-          </tr>
-        
-          <?php foreach (($countryData["affiliations"] ?? []) as $aff => $affCnt): ?>
-            <tr class="geo-affiliation-row geo-hidden"
-                data-group="<?= h($countryId) ?>">
-              <td class="geo-affiliation-row">
-                ↳ <?= h($aff) ?>
-              </td>
-              <td><?= (int)$affCnt ?></td>
-              <td><?= h(pct((int)$affCnt, $totalAffiliationEntries)) ?></td>
-            </tr>
-          <?php endforeach; ?>
-
-        <?php endforeach; ?>
-      <?php endforeach; ?>
-    <?php endforeach; ?>
-  </table>
-</div>
-
-<div class="card">
-  <h2>Affiliation overview</h2>
-
-  <table>
-    <tr><th>Affiliation</th><th>Count</th><th>Share</th></tr>
-
-    <?php if (count($affiliationCounts) === 0): ?>
-      <tr><td colspan="3" class="muted">No affiliations recorded yet.</td></tr>
-    <?php else: ?>
-      <?php foreach ($affiliationCounts as $affiliation => $cnt): ?>
-        <tr>
-          <td><?= h($affiliation) ?></td>
-          <td><?= (int)$cnt ?></td>
-          <td><?= h(pct((int)$cnt, $totalAffiliationEntries)) ?></td>
-        </tr>
-      <?php endforeach; ?>
-    <?php endif; ?>
-  </table>
-</div>
-
-<?php if (false) : ?>
-  <div class="btnrow">
-    <form method="get" class="nomargin">
-      <input type="hidden" name="download">
-      <button type="submit" class="primary">
+  <div class="admin-header-actions">
+    <form method="get">
+      <button type="submit"
+              class="primary"
+              name="download"
+              value="csv">
         Download CSV
       </button>
     </form>
   </div>
-<?php endif; ?>
+</div>
+
+<div class="tabs" role="tablist" aria-label="Admin sections">
+  <button type="button" class="tab-btn active" data-tab="overview">Overview</button>
+  <button type="button" class="tab-btn" data-tab="expertise">Expertise</button>
+  <button type="button" class="tab-btn" data-tab="gaps">Gaps</button>
+  <button type="button" class="tab-btn" data-tab="countries">Countries</button>
+  <button type="button" class="tab-btn" data-tab="geo">Geography</button>
+  <button type="button" class="tab-btn" data-tab="affiliations">Affiliations</button>
+  <button type="button" class="tab-btn" data-tab="reviewers">Reviewers</button>
+</div>
+  
+<div class="tabs-wrap">
+  <div class="tab-panel" id="tab-overview">
+    <div class="grid">
+      <div class="card">
+        <h2>Invitation status</h2>
+        <table>
+          <tr><th>Status</th><th>Count</th><th>Share</th></tr>
+          <tr><td>Open (invited)</td><td><?= (int)$statusCounts["invited"] ?></td><td><?= h(pct((int)$statusCounts["invited"], $total)) ?></td></tr>
+    <!--
+          <tr><td>Opened (optional)</td><td><?= (int)$statusCounts["opened"] ?></td><td><?= h(pct((int)$statusCounts["opened"], $total)) ?></td></tr>
+    -->
+          <tr><td>Accepted</td><td><?= (int)$statusCounts["accepted"] ?></td><td><?= h(pct((int)$statusCounts["accepted"], $total)) ?></td></tr>
+          <tr><td>Registered (saved details)</td><td><?= (int)$statusCounts["registered"] ?></td><td><?= h(pct((int)$statusCounts["registered"], $total)) ?></td></tr>
+          <tr><td>Declined</td><td><?= (int)$statusCounts["declined"] ?></td><td><?= h(pct((int)$statusCounts["declined"], $total)) ?></td></tr>
+          <tr><td>Invalid email</td><td><?= (int)$statusCounts["invalid_email"] ?></td><td><?= h(pct((int)$statusCounts["invalid_email"], $total)) ?></td></tr>
+          <tr><td>Unknown/other</td><td><?= (int)$statusCounts["unknown"] ?></td><td><?= h(pct((int)$statusCounts["unknown"], $total)) ?></td></tr>
+          <tr><th>Total</th><th><?= (int)$total ?></th><th><?= h(pct($total, $total)) ?></th></tr>
+        </table>
+    
+        <div class="muted small">
+          <?php if ($mostRecentUpdate !== ""): ?>
+            Most recent update: <b><?= h($mostRecentUpdate) ?></b>
+            <span class="muted">(token: <span class="mono"><?= h($mostRecentToken) ?></span>)</span>
+          <?php else: ?>
+            No updates recorded yet.
+          <?php endif; ?>
+        </div>
+      </div>
+    
+      <div class="card">
+        <h2>Expertise overview</h2>
+        <div class="muted small">Reviewers with at least one expertise tag: <b><?= (int)$withExpertise ?></b> / <?= (int)$total ?></div>
+        <div class="muted small">Gap threshold: ≤ <?= (int)$GAP_THRESHOLD ?></div>
+        <div class="muted small">Distinct expertise tags used: <b><?= (int)count($expertiseCounts) ?></b></div>
+      </div>
+    </div>
+  </div>
+  
+  <div class="tab-panel hidden" id="tab-expertise">
+    <div class="card">
+      <h2>Structured expertise coverage</h2>
+      <table class="sortable-table" data-default-sort="count">
+        <tr>
+          <th><button type="button" class="sort-btn" data-sort="name">Expertise</button></th>
+          <th><button type="button" class="sort-btn sort-active" data-sort="count">Count</button></th>
+          <th>Share</th>
+        </tr>
+        <?php if (count($expertiseCounts) === 0): ?>
+          <tr><td colspan="3" class="muted">No expertise selections recorded yet.</td></tr>
+        <?php else: ?>
+          <?php foreach ($expertiseCounts as $name => $cnt): ?>
+            <tr data-name="<?= h(mb_strtolower($name, 'UTF-8')) ?>"
+                data-count="<?= (int)$cnt ?>">
+              <td><?= h($name) ?></td>
+              <td><?= (int)$cnt ?></td>
+              <td><?= h(pct((int)$cnt, $totalExpertiseSelections)) ?></td>
+            </tr>
+          <?php endforeach; ?>
+        <?php endif; ?>
+      </table>
+    </div>
+  </div>
+  
+  <div class="tab-panel hidden" id="tab-gaps">
+    <div class="card">
+      <h2>Potential gaps (≤ <?= (int)$GAP_THRESHOLD ?>)</h2>
+      <table class="sortable-table" data-default-sort="count">
+        <tr>
+          <th><button type="button" class="sort-btn" data-sort="name">Expertise</button></th>
+          <th><button type="button" class="sort-btn sort-active" data-sort="count">Count</button></th>
+        </tr>
+        <?php if (count($gaps) === 0): ?>
+          <tr><td colspan="2" class="muted">No gaps detected at this threshold.</td></tr>
+        <?php else: ?>
+          <?php foreach ($gaps as $tag => $cnt): ?>
+            <tr data-name="<?= h(mb_strtolower($tag, 'UTF-8')) ?>"
+                data-count="<?= (int)$cnt ?>">
+              <td><?= h($tag) ?></td>
+              <td><?= (int)$cnt ?></td>
+            </tr>
+          <?php endforeach; ?>
+        <?php endif; ?>
+      </table>
+    </div>
+  </div>
+  
+  <div class="tab-panel hidden" id="tab-countries">
+    <div class="card">
+      <h2>Country overview</h2>
+    
+      <table class="sortable-table" data-default-sort="count">
+        <tr>
+          <th><button type="button" class="sort-btn" data-sort="name">Expertise</button></th>
+          <th><button type="button" class="sort-btn sort-active" data-sort="count">Count</button></th>
+          <th>Share</th>
+        </tr>
+ 
+        <?php if (count($countryCounts) === 0): ?>
+          <tr><td colspan="3" class="muted">No countries recorded yet.</td></tr>
+        <?php else: ?>
+          <?php foreach ($countryCounts as $country => $cnt): ?>
+            <tr data-name="<?= h(mb_strtolower($country, 'UTF-8')) ?>"
+                data-count="<?= (int)$cnt ?>">
+              <td><?= h($country) ?></td>
+              <td><?= (int)$cnt ?></td>
+              <td><?= h(pct((int)$cnt, $totalCountryEntries)) ?></td>
+            </tr>
+          <?php endforeach; ?>
+        <?php endif; ?>
+      </table>
+    </div>
+  </div>
+  
+  <div class="tab-panel hidden" id="tab-geo">
+    <div class="card">
+      <h2>Geographic overview</h2>
+    
+      <table>
+        <tr>
+          <th>Region</th>
+          <th>Count</th>
+          <th>Share</th>
+        </tr>
+    
+        <?php $ci = 0; ?>
+        <?php foreach ($geoTree as $continent => $continentData): ?>
+          <?php
+            $continentId = "geo-cont-" . (++$ci);
+            $si = 0;
+          ?>
+        
+          <tr class="geo-continent-row geo-toggle"
+              data-toggle-prefix="<?= h($continentId) ?>">
+            <td>
+              <span class="geo-arrow">▸</span><?= h($continent) ?>
+            </td>
+            <td><?= (int)$continentData["total"] ?></td>
+            <td><?= h(pct((int)$continentData["total"], $totalCountryEntries)) ?></td>
+          </tr>
+        
+          <?php foreach ($continentData["subs"] as $sub => $subData): ?>
+            <?php $subId = $continentId . "-sub-" . (++$si); ?>
+        
+            <tr class="geo-subcontinent-row geo-toggle geo-hidden"
+                data-group="<?= h($continentId) ?>"
+                data-toggle-prefix="<?= h($subId) ?>">
+              <td>
+                <span class="geo-arrow">▸</span><?= h($sub) ?>
+              </td>
+              <td><?= (int)$subData["total"] ?></td>
+              <td><?= h(pct((int)$subData["total"], $totalCountryEntries)) ?></td>
+            </tr>
+        
+            <?php foreach ($subData["countries"] as $country => $countryData): ?>
+              <?php
+                $countryId = $subId . '-country-' . (++$countryIdx);
+                $countryCnt = (int)($countryData["total"] ?? 0);
+              ?>
+     
+              <tr class="geo-country-row geo-toggle geo-hidden"
+                  data-group="<?= h($subId) ?>"
+                  data-toggle-prefix="<?= h($countryId) ?>">
+                <td><span class="geo-arrow">▸</span><?= h($country) ?></td>
+                <td><?= $countryCnt ?></td>
+                <td><?= h(pct($countryCnt, $totalCountryEntries)) ?></td>
+              </tr>
+            
+              <?php foreach (($countryData["affiliations"] ?? []) as $aff => $affCnt): ?>
+                <tr class="geo-affiliation-row geo-hidden"
+                    data-group="<?= h($countryId) ?>">
+                  <td class="geo-affiliation-row">
+                    ↳ <?= h($aff) ?>
+                  </td>
+                  <td><?= (int)$affCnt ?></td>
+                  <td><?= h(pct((int)$affCnt, $totalAffiliationEntries)) ?></td>
+                </tr>
+              <?php endforeach; ?>
+    
+            <?php endforeach; ?>
+          <?php endforeach; ?>
+        <?php endforeach; ?>
+      </table>
+    </div>
+  </div>
+  
+  <div class="tab-panel hidden" id="tab-affiliations">
+    <div class="card">
+      <h2>Affiliation overview</h2>
+    
+      <table class="sortable-table" data-default-sort="count"style="margin-top:10px;">
+        <tr>
+          <th>
+            <button type="button" class="sort-btn" data-sort="name">Affiliation</button>
+          </th>
+          <th>
+            <button type="button" class="sort-btn sort-active" data-sort="count">Count</button>
+          </th>
+          <th>
+              Share
+          </th>
+        </tr>
+    
+        <?php if (count($affiliationCounts) === 0): ?>
+          <tr><td colspan="3" class="muted">No affiliations recorded yet.</td></tr>
+        <?php else: ?>
+          <?php foreach ($affiliationCounts as $affiliation => $cnt): ?>
+            <tr
+              data-name="<?= h(mb_strtolower($affiliation, 'UTF-8')) ?>"
+              data-count="<?= (int)$cnt ?>"
+            >
+              <td><?= h($affiliation) ?></td>
+              <td><?= (int)$cnt ?></td>
+              <td><?= h(pct((int)$cnt, $totalAffiliationEntries)) ?></td>
+            </tr>
+          <?php endforeach; ?>
+        <?php endif; ?>
+      </table>
+    </div>
+  </div>
+</div>
+
+
+<div class="tab-panel hidden" id="tab-reviewers">
+  <div class="card">
+    <h2>Reviewer overview</h2>
+
+    <table class="sortable-table">
+      <tr>
+        <th><button type="button" class="sort-btn" data-sort="name">Name</button></th>
+        <th><button type="button" class="sort-btn" data-sort="status">Status</button></th>
+        <th><button type="button" class="sort-btn" data-sort="cryptodb">CryptoDB ID</button></th>
+        <th>Affiliations</th>
+        <th>Countries</th>
+      </tr>
+
+      <?php foreach ($rows as $r): ?>
+        <?php
+          $name = trim((string)($r["given_names"] ?? "") . " " . (string)($r["family_name"] ?? ""));
+          $status = trim((string)($r["status"] ?? ""));
+          $cryptodb = trim((string)($r["cryptodb_id"] ?? ""));
+          $aff = trim((string)($r["affiliation"] ?? ""));
+          $country = trim((string)($r["country"] ?? ""));
+        ?>
+        <tr
+          data-name="<?= h(mb_strtolower($name, "UTF-8")) ?>"
+          data-status="<?= h(mb_strtolower($status, "UTF-8")) ?>"
+          data-cryptodb="<?= h($cryptodb !== "" ? str_pad($cryptodb, 12, "0", STR_PAD_LEFT) : "zzzzzzzzzzzz") ?>"
+          data-affiliation="<?= h(mb_strtolower($aff, "UTF-8")) ?>"
+          data-country="<?= h(mb_strtolower($country, "UTF-8")) ?>"
+        >
+          <td><?= h($name) ?></td>
+          <td><?= h($status) ?></td>
+          <td>
+            <?php if ($cryptodb !== ""): ?>
+              <a href="https://iacr.org/cryptodb/data/author.php?authorkey=<?= rawurlencode($cryptodb) ?>"
+                 target="_blank" rel="noopener noreferrer"><?= h($cryptodb) ?></a>
+            <?php else: ?>
+              —
+            <?php endif; ?>
+          </td>
+          <td><?= h(str_replace(" | ", ", ", $aff)) ?></td>
+          <td><?= h(str_replace(" | ", ", ", $country)) ?></td>
+        </tr>
+      <?php endforeach; ?>
+    </table>
+  </div>
+</div>
 
 <script nonce="<?= h($csp_nonce) ?>">
   document.addEventListener("click", (e) => {
@@ -607,6 +885,106 @@ asort($gaps);
       setArrow(row, false);
     }
   });
+
+  (() => {
+    document.querySelectorAll(".sortable-table").forEach(table => {
+  
+      const tbody = table.tBodies[0] || table;
+  
+      table.querySelectorAll(".sort-btn").forEach(btn => {
+  
+        btn.addEventListener("click", () => {
+  
+          const key = btn.dataset.sort;
+  
+          // toggle direction if already active
+          let dir = "asc";
+  
+          if (btn.classList.contains("sort-active")) {
+            dir = (btn.dataset.dir === "asc") ? "desc" : "asc";
+          }
+  
+          // reset all buttons in this table
+          table.querySelectorAll(".sort-btn").forEach(b => {
+            b.classList.remove("sort-active");
+            b.removeAttribute("data-dir");
+          });
+  
+          btn.classList.add("sort-active");
+          btn.dataset.dir = dir;
+  
+          const rows = [...tbody.querySelectorAll("tr[data-name]")];
+  
+          rows.sort((a, b) => {
+  
+            // numeric sorting
+            if (key === "count") {
+  
+              const av = Number(a.dataset.count || 0);
+              const bv = Number(b.dataset.count || 0);
+  
+              return (dir === "asc")
+                ? (av - bv)
+                : (bv - av);
+            }
+  
+            // string sorting
+            const cmp = String(a.dataset[key] || "").localeCompare(
+              String(b.dataset[key] || ""),
+              undefined,
+              {
+                sensitivity: "base",
+                numeric: true
+              }
+            );
+  
+            return (dir === "asc") ? cmp : -cmp;
+          });
+  
+          rows.forEach(r => tbody.appendChild(r));
+        });
+  
+      });
+  
+    });
+
+    document.querySelectorAll(".sortable-table").forEach(table => {
+    
+      const active = table.querySelector(".sort-btn.sort-active");
+    
+      if (active && !active.dataset.dir) {
+        active.dataset.dir = "desc";
+      }
+    
+    });
+  })();
+
+  (() => {
+    const buttons = document.querySelectorAll(".tab-btn");
+    const panels = document.querySelectorAll(".tab-panel");
+  
+    function showTab(name) {
+      buttons.forEach(btn => {
+        btn.classList.toggle("active", btn.dataset.tab === name);
+      });
+  
+      panels.forEach(panel => {
+        panel.classList.toggle("hidden", panel.id !== "tab-" + name);
+      });
+    }
+  
+    buttons.forEach(btn => {
+      btn.addEventListener("click", () => {
+        showTab(btn.dataset.tab);
+        history.replaceState(null, "", "#" + btn.dataset.tab);
+      });
+    });
+  
+    const initial = location.hash ? location.hash.slice(1) : "overview";
+    if (document.getElementById("tab-" + initial)) {
+      showTab(initial);
+    }
+  })();
 </script>
 
 </body>
