@@ -804,6 +804,7 @@ if (($_GET["download"] ?? "") === "csv") {
   
       <table class="sortable-table">
         <tr>
+          <th>Edit</th>
           <th><button type="button" class="sort-btn" data-sort="name">Name</button></th>
           <th><button type="button" class="sort-btn" data-sort="status">Status</button></th>
           <th><button type="button" class="sort-btn" data-sort="cryptodb">CryptoDB ID</button></th>
@@ -826,6 +827,7 @@ if (($_GET["download"] ?? "") === "csv") {
             data-affiliation="<?= h(mb_strtolower($aff, "UTF-8")) ?>"
             data-country="<?= h(mb_strtolower($country, "UTF-8")) ?>"
           >
+            <td><a href="admin_edit.php?invite_email=<?= rawurlencode($r["invite_email"]) ?>">edit</a></td>
             <td><?= h($name) ?></td>
             <td><?= h($status) ?></td>
             <td>
