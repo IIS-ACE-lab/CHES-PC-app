@@ -797,52 +797,51 @@ if (($_GET["download"] ?? "") === "csv") {
       </table>
     </div>
   </div>
-</div>
 
-
-<div class="tab-panel hidden" id="tab-reviewers">
-  <div class="card">
-    <h2>Reviewer overview</h2>
-
-    <table class="sortable-table">
-      <tr>
-        <th><button type="button" class="sort-btn" data-sort="name">Name</button></th>
-        <th><button type="button" class="sort-btn" data-sort="status">Status</button></th>
-        <th><button type="button" class="sort-btn" data-sort="cryptodb">CryptoDB ID</button></th>
-        <th>Affiliations</th>
-        <th>Countries</th>
-      </tr>
-
-      <?php foreach ($rows as $r): ?>
-        <?php
-          $name = trim((string)($r["given_names"] ?? "") . " " . (string)($r["family_name"] ?? ""));
-          $status = trim((string)($r["status"] ?? ""));
-          $cryptodb = trim((string)($r["cryptodb_id"] ?? ""));
-          $aff = trim((string)($r["affiliation"] ?? ""));
-          $country = trim((string)($r["country"] ?? ""));
-        ?>
-        <tr
-          data-name="<?= h(mb_strtolower($name, "UTF-8")) ?>"
-          data-status="<?= h(mb_strtolower($status, "UTF-8")) ?>"
-          data-cryptodb="<?= h($cryptodb !== "" ? str_pad($cryptodb, 12, "0", STR_PAD_LEFT) : "zzzzzzzzzzzz") ?>"
-          data-affiliation="<?= h(mb_strtolower($aff, "UTF-8")) ?>"
-          data-country="<?= h(mb_strtolower($country, "UTF-8")) ?>"
-        >
-          <td><?= h($name) ?></td>
-          <td><?= h($status) ?></td>
-          <td>
-            <?php if ($cryptodb !== ""): ?>
-              <a href="https://iacr.org/cryptodb/data/author.php?authorkey=<?= rawurlencode($cryptodb) ?>"
-                 target="_blank" rel="noopener noreferrer"><?= h($cryptodb) ?></a>
-            <?php else: ?>
-              —
-            <?php endif; ?>
-          </td>
-          <td><?= h(str_replace(" | ", ", ", $aff)) ?></td>
-          <td><?= h(str_replace(" | ", ", ", $country)) ?></td>
+  <div class="tab-panel hidden" id="tab-reviewers">
+    <div class="card">
+      <h2>Reviewer overview</h2>
+  
+      <table class="sortable-table">
+        <tr>
+          <th><button type="button" class="sort-btn" data-sort="name">Name</button></th>
+          <th><button type="button" class="sort-btn" data-sort="status">Status</button></th>
+          <th><button type="button" class="sort-btn" data-sort="cryptodb">CryptoDB ID</button></th>
+          <th>Affiliations</th>
+          <th>Countries</th>
         </tr>
-      <?php endforeach; ?>
-    </table>
+  
+        <?php foreach ($rows as $r): ?>
+          <?php
+            $name = trim((string)($r["given_names"] ?? "") . " " . (string)($r["family_name"] ?? ""));
+            $status = trim((string)($r["status"] ?? ""));
+            $cryptodb = trim((string)($r["cryptodb_id"] ?? ""));
+            $aff = trim((string)($r["affiliation"] ?? ""));
+            $country = trim((string)($r["country"] ?? ""));
+          ?>
+          <tr
+            data-name="<?= h(mb_strtolower($name, "UTF-8")) ?>"
+            data-status="<?= h(mb_strtolower($status, "UTF-8")) ?>"
+            data-cryptodb="<?= h($cryptodb !== "" ? str_pad($cryptodb, 12, "0", STR_PAD_LEFT) : "zzzzzzzzzzzz") ?>"
+            data-affiliation="<?= h(mb_strtolower($aff, "UTF-8")) ?>"
+            data-country="<?= h(mb_strtolower($country, "UTF-8")) ?>"
+          >
+            <td><?= h($name) ?></td>
+            <td><?= h($status) ?></td>
+            <td>
+              <?php if ($cryptodb !== ""): ?>
+                <a href="https://iacr.org/cryptodb/data/author.php?authorkey=<?= rawurlencode($cryptodb) ?>"
+                   target="_blank" rel="noopener noreferrer"><?= h($cryptodb) ?></a>
+              <?php else: ?>
+                —
+              <?php endif; ?>
+            </td>
+            <td><?= h(str_replace(" | ", ", ", $aff)) ?></td>
+            <td><?= h(str_replace(" | ", ", ", $country)) ?></td>
+          </tr>
+        <?php endforeach; ?>
+      </table>
+    </div>
   </div>
 </div>
 
