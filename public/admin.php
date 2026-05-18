@@ -183,10 +183,6 @@ button {
   cursor: pointer;
 }
 
-button:hover {
-  background: #234f98;
-}
-
 .error {
   margin-top: 16px;
 
@@ -285,6 +281,7 @@ $stmt = $pdo->query("
     affiliation,
     country,
     status,
+    created_at,
     updated_at,
     expertise,
     cryptodb_mode,
@@ -1022,6 +1019,7 @@ if (($_GET["download"] ?? "") === "csv") {
           <th><button type="button" class="sort-btn" data-sort="cryptodb">CryptoDB ID</button></th>
           <th>Affiliations</th>
           <th>Countries</th>
+          <th><button type="button" class="sort-btn" data-sort="created_at">Invitation</button></th>
         </tr>
   
         <?php foreach ($rows as $r): ?>
@@ -1031,6 +1029,19 @@ if (($_GET["download"] ?? "") === "csv") {
             $cryptodb = trim((string)($r["cryptodb_id"] ?? ""));
             $aff = trim((string)($r["affiliation"] ?? ""));
             $country = trim((string)($r["country"] ?? ""));
+
+            $created_at_raw = (string)($r["created_at"] ?? "");
+
+            $created_at_fmt = "";
+
+            if ($created_at_raw !== "") {
+              try {
+                $dt = new DateTime($created_at_raw);
+                $created_at_fmt = $dt->format("Y-m-d");
+              } catch (Throwable $e) {
+                $created_at_fmt = $created_at_raw;
+              }
+            }
           ?>
           <tr
             data-name="<?= h(mb_strtolower($name, "UTF-8")) ?>"
@@ -1038,6 +1049,7 @@ if (($_GET["download"] ?? "") === "csv") {
             data-cryptodb="<?= h($cryptodb !== "" ? str_pad($cryptodb, 12, "0", STR_PAD_LEFT) : "zzzzzzzzzzzz") ?>"
             data-affiliation="<?= h(mb_strtolower($aff, "UTF-8")) ?>"
             data-country="<?= h(mb_strtolower($country, "UTF-8")) ?>"
+            data-created_at="<?= h(mb_strtolower($created_at_fmt, "UTF-8")) ?>"
           >
             <td><a href="admin_edit.php?invite_email=<?= rawurlencode($r["invite_email"]) ?>">edit</a></td>
             <td><?= h($name) ?></td>
@@ -1052,6 +1064,7 @@ if (($_GET["download"] ?? "") === "csv") {
             </td>
             <td><?= h(str_replace(" | ", ", ", $aff)) ?></td>
             <td><?= h(str_replace(" | ", ", ", $country)) ?></td>
+            <td><?= h($created_at_fmt) ?></td>
           </tr>
         <?php endforeach; ?>
       </table>
