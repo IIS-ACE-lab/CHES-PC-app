@@ -329,8 +329,11 @@ function canonical_country_name(string $country): string {
     'the netherlands' => 'Netherlands',
     'deutschland' => 'Germany',
     'u.s.' => 'United States',
+    'us' => 'United States',
+    'uk' => 'United Kingdom',
     'usa' => 'United States',
     'uae' => 'United Arab Emirates',
+    'ca' => "Canada",
   ];
 
   $k = mb_strtolower($c, 'UTF-8');
@@ -809,7 +812,6 @@ if (($_GET["download"] ?? "") === "csv") {
         <div class="muted small">
           <?php if ($mostRecentUpdate !== ""): ?>
             Most recent update: <b><?= h($mostRecentUpdate) ?></b>
-            <span class="muted">(token: <span class="mono"><?= h($mostRecentToken) ?></span>)</span>
           <?php else: ?>
             No updates recorded yet.
           <?php endif; ?>
