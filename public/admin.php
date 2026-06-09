@@ -1019,8 +1019,8 @@ if (($_GET["download"] ?? "") === "csv") {
           <th><button type="button" class="sort-btn" data-sort="name">Name</button></th>
           <th><button type="button" class="sort-btn" data-sort="status">Status</button></th>
           <th><button type="button" class="sort-btn" data-sort="cryptodb">CryptoDB ID</button></th>
-          <th>Affiliations</th>
-          <th>Countries</th>
+          <th><button type="button" class="sort-btn" data-sort="affiliation">Affiliations</button></th>
+          <th><button type="button" class="sort-btn" data-sort="country">Countries</button></th>
           <th><button type="button" class="sort-btn" data-sort="created_at">Invitation</button></th>
         </tr>
   
