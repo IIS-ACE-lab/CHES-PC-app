@@ -67,6 +67,7 @@ $config = require __DIR__ . '/../config/config.php';
 
 $dbPath = $config['db_path'];
 $auditLogPath = $config['audit_log_path'];
+$suggestionPath = $config['suggestion_path'];
 
 
 // Token format (match your generator)
@@ -144,6 +145,35 @@ function append_audit_log_file(string $path, array $data): void {
   }
 
   fclose($fh);
+}
+
+function append_reviewer_suggestions(
+    string $path,
+    string $inviteEmail,
+    array $suggestions
+): bool {
+    $dir = dirname($path);
+    if (!is_dir($dir)) @mkdir($dir, 0775, true);
+
+    $fh = fopen($path, "ab");
+    if (!$fh) return false;
+
+    $ok = false;
+
+    if (flock($fh, LOCK_EX)) {
+        $line = json_encode([
+            "ts" => gmdate("c"),
+            "invite_email" => $inviteEmail,
+            "suggestions" => $suggestions,
+        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . "\n";
+
+        $ok = fwrite($fh, $line) !== false;
+        fflush($fh);
+        flock($fh, LOCK_UN);
+    }
+
+    fclose($fh);
+    return $ok;
 }
 
 function load_reviewer(PDO $pdo, string $token): ?array {
@@ -301,6 +331,8 @@ $mode = "gate"; // gate (accept/decline) or form
 if ($status === "accepted" || $status === "registered") $mode = "form";
 if ($status === "declined") $mode = "gate";
 
+$suggestion_saved = false;
+
 // ---- POST handler ----
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   $posted_csrf = $_POST['csrf'] ?? '';
@@ -365,6 +397,71 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $status = "declined";
     $updated_at = $now;
     $mode = "declined";
+  }
+  elseif ($action === 'suggest') {
+      if ($status !== 'declined') {
+          bad_request("Reviewer suggestions can only be submitted after declining.");
+      }
+  
+      $names = $_POST['suggestion_name'] ?? [];
+      $emails = $_POST['suggestion_email'] ?? [];
+      $affiliations = $_POST['suggestion_affiliation'] ?? [];
+  
+      if (!is_array($names) ||
+          !is_array($emails) ||
+          !is_array($affiliations)) {
+          bad_request("Invalid reviewer suggestion.");
+      }
+  
+      $suggestions = [];
+      $n = max(count($names), count($emails), count($affiliations));
+  
+      for ($i = 0; $i < $n; $i++) {
+          $name = trim((string)($names[$i] ?? ''));
+          $email = trim((string)($emails[$i] ?? ''));
+          $affiliation = trim((string)($affiliations[$i] ?? ''));
+  
+          // Ignore the automatically generated empty row.
+          if ($name === '' && $email === '' && $affiliation === '') {
+              continue;
+          }
+  
+          if ($name === '') {
+              $errors[] = "Please enter a name for each suggested reviewer.";
+              continue;
+          }
+  
+          if ($email !== '' &&
+              !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+              $errors[] = "Invalid email address for suggested reviewer: " . $name;
+              continue;
+          }
+  
+          $suggestions[] = [
+              "name" => $name,
+              "email" => $email,
+              "affiliation" => $affiliation,
+          ];
+      }
+  
+      if (!$suggestions && !$errors) {
+          $errors[] = "Please enter at least one reviewer suggestion.";
+      }
+  
+      if (!$errors) {
+          if (!append_reviewer_suggestions(
+              $suggestionPath,
+              $invite_email,
+              $suggestions
+          )) {
+              http_response_code(500);
+              die("Could not save reviewer suggestions.");
+          }
+  
+          $suggestion_saved = true;
+      }
+  
+      $mode = "declined";
   }
   // Form save
   elseif ($action === 'save') {
@@ -788,6 +885,38 @@ legend {
   display: none;
 }
 
+.reviewer-suggestion-rows {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.reviewer-suggestion-header,
+.reviewer-suggestion-row {
+  display: grid;
+  grid-template-columns: 1.2fr 1.4fr 1.4fr;
+  gap: 10px;
+}
+
+.reviewer-suggestion-header {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.reviewer-suggestion-row input {
+  margin-top: 0;
+}
+
+@media (max-width: 720px) {
+  .reviewer-suggestion-header {
+    display: none;
+  }
+
+  .reviewer-suggestion-row {
+    grid-template-columns: 1fr;
+  }
+}
+
   </style>
 </head>
 <body>
@@ -843,11 +972,45 @@ legend {
   <?php elseif ($mode === "declined"): ?>
     <div class="card">
       <h2>Invitation declined</h2>
-
+  
       <p>
         Thank you for letting us know.
         If this was a mistake, please <a href="?t=<?= h($token) ?>">click here</a>.
       </p>
+  
+      <?php if ($suggestion_saved): ?>
+  
+        <p><strong>Thank you for the reviewer suggestion.</strong></p>
+  
+      <?php else: ?>
+
+        <p>
+          If you would like to suggest other potential reviewers, you can
+          enter their details below. Only the name is required.
+        </p>
+        
+        <form method="post" id="reviewerSuggestionForm">
+          <input type="hidden"
+                 name="csrf"
+                 value="<?= h($_SESSION['csrf']) ?>">
+        
+          <input type="hidden"
+                 name="action"
+                 value="suggest">
+        
+          <div id="reviewerSuggestionRows" class="reviewer-suggestion-rows">
+          </div>
+        
+          <div class="hint">
+            Additional rows appear automatically as you enter suggestions.
+          </div>
+        
+          <div class="btnrow">
+            <button type="submit">Submit suggestion(s)</button>
+          </div>
+        </form>
+ 
+      <?php endif; ?>
     </div>
 
   <?php else: /* form */ ?>
@@ -1772,6 +1935,69 @@ legend {
         manual.value = idHidden.value;
         manual.disabled = false;
       }
+    })();
+
+    (function () {
+      const container = document.getElementById("reviewerSuggestionRows");
+      if (!container) return;
+    
+      const header = document.createElement("div");
+      header.className = "reviewer-suggestion-header";
+    
+      for (const text of ["Name", "Email", "Affiliation"]) {
+        const el = document.createElement("div");
+        el.textContent = text;
+        header.appendChild(el);
+      }
+    
+      container.appendChild(header);
+    
+      function makeRow() {
+        const row = document.createElement("div");
+        row.className = "reviewer-suggestion-row";
+    
+        const name = document.createElement("input");
+        name.type = "text";
+        name.name = "suggestion_name[]";
+        name.placeholder = "Name";
+        name.maxLength = 240;
+    
+        const email = document.createElement("input");
+        email.type = "email";
+        email.name = "suggestion_email[]";
+        email.placeholder = "Email";
+        email.maxLength = 254;
+    
+        const affiliation = document.createElement("input");
+        affiliation.type = "text";
+        affiliation.name = "suggestion_affiliation[]";
+        affiliation.placeholder = "Affiliation";
+        affiliation.maxLength = 240;
+    
+        for (const input of [name, email, affiliation]) {
+          input.addEventListener("input", ensureTrailingEmptyRow);
+        }
+    
+        row.append(name, email, affiliation);
+        return row;
+      }
+    
+      function rowIsEmpty(row) {
+        return [...row.querySelectorAll("input")]
+          .every(input => input.value.trim() === "");
+      }
+    
+      function ensureTrailingEmptyRow() {
+        const rows = [
+          ...container.querySelectorAll(".reviewer-suggestion-row")
+        ];
+    
+        if (rows.length === 0 || !rowIsEmpty(rows[rows.length - 1])) {
+          container.appendChild(makeRow());
+        }
+      }
+    
+      ensureTrailingEmptyRow();
     })();
 
   </script>

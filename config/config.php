@@ -6,6 +6,8 @@ return [
   'db_path' => __DIR__ . '/../data/reviewers.sqlite',
   'audit_log_path' => __DIR__ . '/../data/reviewers.audit.log',
 
+  'suggestion_path' => __DIR__ . '/../data/reviewer_suggestions.jsonl',
+
   'cryptodb_cache' => __DIR__ . '/../data/cryptodb_cache',
 
   'secrets' => __DIR__ . '/../secrets/secrets.php',
