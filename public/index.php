@@ -318,12 +318,27 @@ if (!in_array($cryptodb_mode, ["auto","manual","none", ""], true)) {
 
 $EXPERTISE_TAXONOMY = $config['expertise_taxonomy'] ?? [];
 
-$expertise_set = [];
+$expertise_values = [];
+
+/* Default every topic to 0. */
+foreach ($EXPERTISE_TAXONOMY as $cat => $topics) {
+    foreach ($topics as $topic) {
+        $expertise_values[$topic] = 0;
+    }
+}
+
 if ($expertise_raw !== "") {
-  foreach (explode("|", $expertise_raw) as $tag) {
-    $tag = trim($tag);
-    if ($tag !== "") $expertise_set[$tag] = true;
-  }
+    $decoded = json_decode($expertise_raw, true);
+
+    if (is_array($decoded)) {
+        foreach ($decoded as $topic => $value) {
+            if (array_key_exists($topic, $expertise_values) &&
+                is_int($value) &&
+                $value >= -2 && $value <= 2) {
+                $expertise_values[$topic] = $value;
+            }
+        }
+    }
 }
 
 $errors = [];
@@ -540,14 +555,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $expertise_raw = implode("|", $keys);
 
 
-    // Rebuild set so checkboxes reflect POSTed values even if we show errors
-    $expertise_set = [];
-    if ($expertise_raw !== "") {
-      foreach (explode("|", $expertise_raw) as $tag) {
-        $tag = trim($tag);
-        if ($tag !== "") $expertise_set[$tag] = true;
-      }
+    $expertise_post = $_POST["expertise"] ?? [];
+    if (!is_array($expertise_post)) {
+        $expertise_post = [];
     }
+    
+    $expertise_values = [];
+    
+    foreach ($EXPERTISE_TAXONOMY as $cat => $topics) {
+        foreach ($topics as $topic) {
+            $value = (string)($expertise_post[$topic] ?? "0");
+    
+            if (!in_array($value, ["-2", "-1", "0", "1", "2"], true)) {
+                $value = "0";
+            }
+    
+            $expertise_values[$topic] = (int)$value;
+        }
+    }
+    
+    $expertise_raw = json_encode(
+        $expertise_values,
+        JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
+    );
+
     
     if ($review_email === '') {
       $errors[] = "Please enter the email address you want us to use for reviewing.";
@@ -724,67 +755,54 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   background: #eaeaea;
 }
 
-.expertise-grid {
+.expertise-scale-header,
+.expertise-scale-row {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px 18px;
+  grid-template-columns: minmax(240px, 1fr) repeat(5, 38px);
+  align-items: center;
+}
+
+.expertise-scale-header {
+  margin-top: 8px;
+  text-align: center;
+  font-size: 13px;
+}
+
+.expertise-scale-header span {
+  font-size: 17px;
+  line-height: 1;
+}
+
+.expertise-category {
   margin-top: 10px;
+  padding: 4px 5px;
+  color: #666;
 }
-.expertise-item {
+
+.expertise-scale-row {
+  min-height: 30px;
+  padding: 3px 5px;
+  margin-left: 1em;
+}
+
+.expertise-scale-row:nth-of-type(even) {
+  background: #f2f7fa;
+}
+
+.expertise-topic {
+  padding-right: 10px;
+}
+
+.expertise-radio {
   display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  font-weight: 500;
-  margin-top: 0;
-}
-.expertise-item input {
-  width: auto;
-  margin-top: 2px;
-}
-
-.expertise-cats {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px 14px;
-  margin-top: 10px;
-}
-
-@media (max-width: 720px) {
-  .expertise-cats { grid-template-columns: 1fr; }
-}
-
-.expertise-cat {
-  border: 1px solid #ddd;
-  border-radius: 12px;
-  padding: 10px 12px;
-  background: #fff;
-}
-
-.expertise-cat-title {
-  font-weight: 700;
-  margin: 0 0 8px 0;
-}
-
-.expertise-items {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 6px;
-}
-
-.expertise-item {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  font-weight: 500;
+  justify-content: center;
+  align-items: center;
   margin: 0;
 }
-.expertise-item input {
-  width: auto;
-  margin-top: 2px;
-}
 
-.expertise-cats > .expertise-cat:last-of-type {
-  grid-column: 1 / -1;
+.expertise-radio input[type="radio"] {
+  width: auto;
+  margin: 0;
 }
 
 .sticky-save {
@@ -1137,39 +1155,55 @@ legend {
           <input type="hidden" id="cryptodb_id_saved" name="cryptodb_id" value="<?= h($cryptodb_id) ?>">
           <input type="hidden" id="cryptodb_mode_saved" value="<?= h($cryptodb_mode) ?>">
         </fieldset>
-       
+
 
         <fieldset class="mt">
-          <legend>Areas of expertise (optional):</legend>
-
-          <div class="expertise-cats">
-            <?php foreach ($EXPERTISE_TAXONOMY as $cat => $topics): ?>
-              <div class="expertise-cat">
-                <div class="expertise-cat-title"><?= h($cat) ?></div>
+          <legend>Areas of expertise:</legend>
         
-                <div class="expertise-items">
-                  <?php foreach ($topics as $opt): ?>
-                    <label class="expertise-item">
-                      <input type="checkbox"
-                             name="expertise[]"
-                             value="<?= h($opt) ?>"
-                             <?= isset($expertise_set[$opt]) ? "checked" : "" ?>>
-                      <?= h($opt) ?>
-                    </label>
-                  <?php endforeach; ?>
-                </div>
+          <div class="expertise-scale-header">
+            <div></div>
+            <div><strong>Low</strong><br><span>⇊</span></div>
+            <div><br><span>↓</span></div>
+            <div><br><span>○</span></div>
+            <div><br><span>↑</span></div>
+            <div><strong>High</strong><br><span>⇈</span></div>
+          </div>
+        
+          <?php foreach ($EXPERTISE_TAXONOMY as $cat => $topics): ?>
+        
+            <div class="expertise-category mt0">
+              <?= h($cat) ?>
+            </div>
+        
+            <?php foreach ($topics as $opt): ?>
+              <div class="expertise-scale-row">
+                <div class="expertise-topic"><?= h($opt) ?></div>
+        
+                <?php foreach ([-2, -1, 0, 1, 2] as $value): ?>
+                  <label class="expertise-radio">
+                    <input
+                      type="radio"
+                      name="expertise[<?= h($opt) ?>]"
+                      value="<?= $value ?>"
+                      <?= $expertise_values[$opt] === $value ? "checked" : "" ?>
+                    >
+                  </label>
+                <?php endforeach; ?>
               </div>
             <?php endforeach; ?>
+        
+          <?php endforeach; ?>
+        
+          <div class="hint mt10">
+            Please rate your expertise in each area from low to high.
           </div>
-
-          <div class="hint mt5">
-            Select areas where you feel comfortable reviewing CHES-level submissions.
-          </div>
-
           <div class="hint-secondary mt5">
-            Used internally by the PC Chairs to assess expertise coverage.
+            Used internally by the PC Chairs to assess expertise coverage
+            and to populate the reviewer profile in the submission system
+            where it may be used to help match papers to reviewers.
           </div>
         </fieldset>
+       
 
         <p>
           The submitted information will only be used for conference organization purposes and will not be shared outside the organizing committee.

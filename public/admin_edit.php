@@ -83,6 +83,32 @@ if (!$row) {
   fail(404, 'Reviewer not found.');
 }
 
+$expertiseValues = [];
+
+$expertiseRaw = trim((string)($row['expertise'] ?? ''));
+
+if ($expertiseRaw !== '') {
+  $decoded = json_decode($expertiseRaw, true);
+
+  if (is_array($decoded)) {
+    foreach ($decoded as $topic => $value) {
+      $value = (int)$value;
+
+      if ($value >= -2 && $value <= 2) {
+        $expertiseValues[(string)$topic] = $value;
+      }
+    }
+  }
+}
+
+$expertiseLabels = [
+  -2 => 'Low',
+  -1 => 'Somewhat low',
+   0 => 'Neutral',
+   1 => 'Somewhat high',
+   2 => 'High',
+];
+
 $errors = [];
 $currentRow = null;
 
@@ -357,6 +383,27 @@ code {
 .preish {
   white-space: pre-wrap;
 }
+
+.expertise-display {
+  margin-top: 24px;
+}
+
+.expertise-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 8px;
+}
+
+.expertise-table th,
+.expertise-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid #ddd;
+  text-align: left;
+}
+
+.expertise-table th {
+  background: #f5f5f5;
+}
 </style>
 </head>
 
@@ -488,6 +535,26 @@ code {
            inputmode="numeric"
            value="<?= h(post_or_row('cryptodb_id', $row)) ?>">
     <div class="muted small">Digits only. Leave empty if unknown.</div>
+
+    <?php if ($expertiseValues): ?>
+      <div class="expertise-display">
+        <h2>Expertise</h2>
+    
+        <table class="expertise-table">
+          <tr>
+            <th>Area</th>
+            <th>Rating</th>
+          </tr>
+    
+          <?php foreach ($expertiseValues as $topic => $value): ?>
+            <tr>
+              <td><?= h($topic) ?></td>
+              <td><?= (int)$value ?> — <?= h($expertiseLabels[$value] ?? '') ?></td>
+            </tr>
+          <?php endforeach; ?>
+        </table>
+      </div>
+    <?php endif; ?>
 
     <div class="btnrow">
       <button class="primary" type="submit">Save changes</button>

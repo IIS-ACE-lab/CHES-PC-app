@@ -356,18 +356,45 @@ foreach ($rows as $r) {
     $mostRecentToken = trim((string)($r["token"] ?? ""));
   }
 
-  $expertise = trim((string)($r["expertise"] ?? ""));
+//  $expertise = trim((string)($r["expertise"] ?? ""));
+//
+//  if ($expertise !== "") {
+//    $withExpertise++;
+//    foreach (explode("|", $expertise) as $tag) {
+//      $tag = trim($tag);
+//      if ($tag === "") continue;
+//
+//      if (array_key_exists($tag, $expertiseCounts)) {
+//        $expertiseCounts[$tag]++;
+//      }
+//    }
+//  }
 
-  if ($expertise !== "") {
-    $withExpertise++;
-    foreach (explode("|", $expertise) as $tag) {
-      $tag = trim($tag);
-      if ($tag === "") continue;
-
-      if (array_key_exists($tag, $expertiseCounts)) {
-        $expertiseCounts[$tag]++;
+  $expertiseRaw = trim((string)($r["expertise"] ?? ""));
+  $hasPositiveExpertise = false;
+  
+  if ($expertiseRaw !== "") {
+    $expertiseValues = json_decode($expertiseRaw, true);
+  
+    if (is_array($expertiseValues)) {
+      foreach ($expertiseValues as $tag => $value) {
+        if (!array_key_exists($tag, $expertiseCounts)) {
+          continue;
+        }
+  
+        $value = (int)$value;
+  
+        // Only positive expertise ratings (+1 or +2) count.
+        if ($value > 0) {
+          $expertiseCounts[$tag]++;
+          $hasPositiveExpertise = true;
+        }
       }
     }
+  }
+  
+  if ($hasPositiveExpertise) {
+    $withExpertise++;
   }
 
   $affiliationRaw = trim((string)($r["affiliation"] ?? ""));
@@ -399,6 +426,10 @@ arsort($affiliationCounts);
 
 $totalAffiliationEntries = array_sum($affiliationCounts);
 $totalExpertiseSelections = array_sum($expertiseCounts);
+
+$distinctExpertiseUsed = count(
+  array_filter($expertiseCounts, fn($cnt) => $cnt > 0)
+);
 
 
 $countryCounts = [];
@@ -822,7 +853,7 @@ if (($_GET["download"] ?? "") === "csv") {
         <h2>Expertise overview</h2>
         <div class="muted small">Reviewers with at least one expertise tag: <b><?= (int)$withExpertise ?></b> / <?= (int)$total ?></div>
         <div class="muted small">Gap threshold: ≤ <?= (int)$GAP_THRESHOLD ?></div>
-        <div class="muted small">Distinct expertise tags used: <b><?= (int)count($expertiseCounts) ?></b></div>
+        <div class="muted small">Distinct expertise tags with positive ratings:<b><?= (int)$distinctExpertiseUsed ?></b></div>
       </div>
     </div>
   </div>
